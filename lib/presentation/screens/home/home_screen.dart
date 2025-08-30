@@ -17,38 +17,583 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final ScrollController _dateScrollController = ScrollController();
+  final PageController _pageController = PageController(
+    initialPage: DateTime.now().day - 1,
+    viewportFraction: 0.2,
+  );
   final User? currentUser = FirebaseAuth.instance.currentUser;
-  @override
-  void initState() {
-    super.initState();
-
-    // Delay to wait for build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final int selectedIndex = 15; // Assuming today is at index 15
-      _dateScrollController.animateTo(
-        selectedIndex * 72.0, // 60 width + 12 margin/padding approx
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    });
-  }
-
   DateTime _selectedDate = DateTime.now();
 
   @override
-  Widget build(BuildContext context) {
-    final firstDayOfMonth = DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      1,
+  void initState() {
+    super.initState();
+    // Initialize with today's date
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToSelectedDate();
+    });
+  }
+
+  void _scrollToSelectedDate() {
+    final index = _selectedDate.day - 1;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
     );
+  }
+
+  List<DocumentSnapshot> _getHabitsForDate(
+    List<DocumentSnapshot> allHabits,
+    DateTime date,
+  ) {
+    final dateWeekday =
+        ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][date.weekday - 1];
+
+    return allHabits.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final repeatType = data['repeatType'];
+
+      if (repeatType == 'Repeat Till Done') {
+        final selectedDate = (data['selectedDate'] as Timestamp?)?.toDate();
+        final isCompleted = data['isCompleted'] ?? false;
+
+        // Show if target date is today or in the past AND not completed yet
+        if (selectedDate != null && !isCompleted) {
+          return selectedDate.isBefore(date.add(const Duration(days: 1))) ||
+              (selectedDate.year == date.year &&
+                  selectedDate.month == date.month &&
+                  selectedDate.day == date.day);
+        }
+        return false;
+      } else if (repeatType == 'Weekly') {
+        final selectedDays = List<String>.from(data['selectedDays'] ?? []);
+        final startDate = (data['startDate'] as Timestamp?)?.toDate();
+        final endDate = (data['endDate'] as Timestamp?)?.toDate();
+
+        // Check if date is within the range and on the selected weekday
+        if (startDate != null &&
+            endDate != null &&
+            selectedDays.contains(dateWeekday)) {
+          return date.isAfter(startDate.subtract(const Duration(days: 1))) &&
+              date.isBefore(endDate.add(const Duration(days: 1)));
+        }
+      }
+
+      return false;
+    }).toList();
+  }
+
+  Color _getPriorityColor(String priority) {
+    switch (priority) {
+      case 'High':
+        return Colors.red;
+      case 'Medium':
+        return Colors.orange;
+      case 'Low':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget _buildDateSelector() {
     final lastDayOfMonth = DateTime(
       _selectedDate.year,
       _selectedDate.month + 1,
       0,
     );
     final totalDays = lastDayOfMonth.day;
+    final today = DateTime.now();
+
+    return SizedBox(
+      height: 100,
+      child: PageView.builder(
+        controller: _pageController,
+        onPageChanged: (index) {
+          setState(() {
+            _selectedDate = DateTime(
+              _selectedDate.year,
+              _selectedDate.month,
+              index + 1,
+            );
+          });
+        },
+        itemCount: totalDays,
+        itemBuilder: (context, index) {
+          final date = DateTime(
+            _selectedDate.year,
+            _selectedDate.month,
+            index + 1,
+          );
+          final isSelected = _selectedDate.day == date.day;
+          final isToday =
+              today.year == date.year &&
+              today.month == date.month &&
+              today.day == date.day;
+          final isPast = date.isBefore(today);
+          final isFuture = date.isAfter(today);
+
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedDate = date;
+                _scrollToSelectedDate();
+              });
+            },
+            child: Container(
+              width: 60,
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 16),
+              decoration: BoxDecoration(
+                color:
+                    isSelected
+                        ? Theme.of(context).primaryColor
+                        : isToday
+                        ? Colors.blue.shade100
+                        : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color:
+                      isToday
+                          ? Colors.blue
+                          : isPast
+                          ? Colors.grey.shade400
+                          : isFuture
+                          ? Colors.grey.shade300
+                          : Colors.grey.shade300,
+                  width: isToday ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    DateFormat.E().format(date),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color:
+                          isSelected
+                              ? Colors.white
+                              : isPast
+                              ? Colors.grey.shade600
+                              : Colors.black,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    date.day.toString(),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color:
+                          isSelected
+                              ? Colors.white
+                              : isPast
+                              ? Colors.grey.shade600
+                              : Colors.black,
+                    ),
+                  ),
+                  if (isPast)
+                    Icon(Icons.history, size: 12, color: Colors.grey.shade600),
+                  if (isFuture)
+                    Icon(Icons.schedule, size: 12, color: Colors.grey.shade600),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHabitCard(
+    DocumentSnapshot habit,
+    String formattedDate,
+    bool isPastDate,
+  ) {
+    final data = habit.data() as Map<String, dynamic>;
+    final title = data['title'] ?? '';
+    final description = data['description'] ?? '';
+    final category = data['category'] ?? '';
+    final priority = data['priority'] ?? 'Medium';
+    final repeatType = data['repeatType'] ?? '';
+    final dailyCompletion = data['dailyCompletion'] ?? {};
+    final entry = dailyCompletion[formattedDate];
+    final isCompletedForever =
+        data['isCompleted'] ?? false; // For "Repeat Till Done"
+
+    double value = 0;
+    double target = (data['targetValue'] ?? 0).toDouble();
+    String targetUnit = data['targetUnit'] ?? '';
+
+    if (entry is Map<String, dynamic>) {
+      value = (entry['value'] ?? 0).toDouble();
+    }
+
+    bool isMeasurable = target > 0;
+    bool isCompleted = false;
+
+    if (repeatType == 'Repeat Till Done') {
+      isCompleted = isCompletedForever;
+    } else {
+      isCompleted = isMeasurable ? value >= target : (entry == true);
+    }
+
+    // Calculate overall progress for this habit
+    double overallProgress = 0.0;
+    if (repeatType == 'Weekly') {
+      int completedDays = 0;
+      int totalValidDays = 0;
+
+      dailyCompletion.forEach((key, value) {
+        final date = DateTime.tryParse(key);
+        if (date != null) {
+          final startDate = (data['startDate'] as Timestamp?)?.toDate();
+          final endDate = (data['endDate'] as Timestamp?)?.toDate();
+
+          if (startDate != null &&
+              endDate != null &&
+              date.isAfter(startDate.subtract(const Duration(days: 1))) &&
+              date.isBefore(endDate.add(const Duration(days: 1)))) {
+            totalValidDays++;
+
+            if (value is Map<String, dynamic>) {
+              final achieved = (value['value'] ?? 0).toDouble();
+              final target = (value['target'] ?? 1).toDouble();
+              if (achieved >= target) completedDays++;
+            } else if (value == true) {
+              completedDays++;
+            }
+          }
+        }
+      });
+
+      overallProgress =
+          totalValidDays > 0 ? completedDays / totalValidDays : 0.0;
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      elevation: 2,
+      child: InkWell(
+        onTap: () {
+          context.goNamed(
+            AppRoutes.addEdit,
+            extra: {
+              'habitId': habit.id,
+              'existingTitle': title,
+              'existingDescription': description,
+            },
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header with title, category, and priority
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.flag,
+                              color: _getPriorityColor(priority),
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  decoration:
+                                      isCompleted
+                                          ? TextDecoration.lineThrough
+                                          : null,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (category.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              category,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Type indicator
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color:
+                          repeatType == 'Repeat Till Done'
+                              ? Colors.purple.shade100
+                              : Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      repeatType == 'Repeat Till Done' ? 'Till Done' : 'Weekly',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                        color:
+                            repeatType == 'Repeat Till Done'
+                                ? Colors.purple.shade700
+                                : Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              // Progress section
+              Row(
+                children: [
+                  // Input section for measurable habits
+                  if (isMeasurable && !isCompletedForever)
+                    Expanded(
+                      flex: 3,
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 60,
+                            child: TextFormField(
+                              initialValue: value.toInt().toString(),
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 14),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                  horizontal: 4,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                enabled: true, // Allow editing for any date
+                              ),
+                              onFieldSubmitted: (newVal) {
+                                final parsed = double.tryParse(newVal) ?? 0.0;
+                                // REMOVED CLAMP - Allow any positive value
+                                final newValue = parsed < 0 ? 0.0 : parsed;
+
+                                // Update Firestore
+                                Map<String, dynamic> updateData = {
+                                  'dailyCompletion.$formattedDate': {
+                                    'value': newValue,
+                                    'target': target,
+                                  },
+                                };
+
+                                // For "Repeat Till Done", mark as completed if target is met
+                                if (repeatType == 'Repeat Till Done' &&
+                                    newValue >= target) {
+                                  updateData['isCompleted'] = true;
+                                }
+
+                                FirebaseFirestore.instance
+                                    .collection('habits')
+                                    .doc(habit.id)
+                                    .update(updateData);
+
+                                setState(() {});
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            "/ ${target.toInt()} $targetUnit",
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          // Show exceeded indicator if value > target
+                          if (value > target)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  "+${(value - target).toInt()}",
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.green.shade700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+
+                  // For "Repeat Till Done" completed habits
+                  if (repeatType == 'Repeat Till Done' && isCompletedForever)
+                    Expanded(
+                      flex: 3,
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle,
+                            color: Colors.green,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            "Completed!",
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () {
+                              // Allow unmarking completion
+                              FirebaseFirestore.instance
+                                  .collection('habits')
+                                  .doc(habit.id)
+                                  .update({'isCompleted': false});
+                            },
+                            child: Text("Undo", style: TextStyle(fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const Spacer(),
+
+                  // Progress indicator - Cap at 100% for display but allow higher values
+                  CircularPercentIndicator(
+                    radius: 25,
+                    lineWidth: 5.0,
+                    percent:
+                        isMeasurable
+                            ? (value / target).clamp(
+                              0.0,
+                              1.0,
+                            ) // Cap display at 100%
+                            : (repeatType == 'Weekly'
+                                ? overallProgress
+                                : (isCompleted ? 1.0 : 0.0)),
+                    center: Text(
+                      isMeasurable
+                          ? "${((value / target) * 100).clamp(0, 100).toStringAsFixed(0)}%"
+                          : (repeatType == 'Weekly'
+                              ? "${(overallProgress * 100).toStringAsFixed(0)}%"
+                              : (isCompleted ? "âœ“" : "0%")),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    progressColor: isCompleted ? Colors.green : Colors.blue,
+                    backgroundColor: Colors.grey.shade300,
+                  ),
+                ],
+              ),
+
+              // Show backlog indicator for overdue "Repeat Till Done" habits
+              if (repeatType == 'Repeat Till Done' && !isCompletedForever)
+                Builder(
+                  builder: (context) {
+                    final targetDate =
+                        (data['selectedDate'] as Timestamp?)?.toDate();
+                    final today = DateTime.now();
+
+                    if (targetDate != null && targetDate.isBefore(today)) {
+                      final daysPast = today.difference(targetDate).inDays;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.schedule,
+                                size: 14,
+                                color: Colors.red.shade600,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                "Overdue by $daysPast day${daysPast > 1 ? 's' : ''}",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.red.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
+              // Show description if available
+              if (description.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    description,
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final isPastDate = _selectedDate.isBefore(
+      DateTime(today.year, today.month, today.day),
+    );
+
     return Scaffold(
       appBar: CommonAppBar(
         title: 'HabitDo',
@@ -57,22 +602,13 @@ class _HomeScreenState extends State<HomeScreen> {
           final picked = await showDatePicker(
             context: context,
             initialDate: _selectedDate,
-            firstDate: DateTime(2000),
-            lastDate: DateTime(2100),
+            firstDate: DateTime(2020),
+            lastDate: DateTime(2030),
           );
           if (picked != null && picked != _selectedDate) {
             setState(() {
               _selectedDate = picked;
-            });
-
-            // Delay to allow setState to finish before scrolling
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              final index = picked.day - 1;
-              _dateScrollController.animateTo(
-                index * 72.0,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-              );
+              _scrollToSelectedDate();
             });
           }
         },
@@ -82,76 +618,76 @@ class _HomeScreenState extends State<HomeScreen> {
         showHome: true,
         child: Column(
           children: [
-            // Horizontal Scrollable Date Picker
-            SizedBox(
-              height: 100,
-              child: ListView.builder(
-                controller: _dateScrollController,
-                scrollDirection: Axis.horizontal,
-                itemCount: totalDays,
-                itemBuilder: (context, index) {
-                  final date = DateTime(
-                    _selectedDate.year,
-                    _selectedDate.month,
-                    index + 1,
-                  );
-                  final isSelected =
-                      _selectedDate.year == date.year &&
-                      _selectedDate.month == date.month &&
-                      _selectedDate.day == date.day;
-
-                  return GestureDetector(
-                    onTap: () {
+            // Month/Year header
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    onPressed: () {
                       setState(() {
-                        _selectedDate = date;
-                        // Recenter on new selected date
-                        _dateScrollController.animateTo(
-                          index * 72.0,
+                        _selectedDate = DateTime(
+                          _selectedDate.year,
+                          _selectedDate.month - 1,
+                        );
+                        _pageController.animateToPage(
+                          _selectedDate.day - 1,
                           duration: const Duration(milliseconds: 300),
                           curve: Curves.easeInOut,
                         );
                       });
                     },
-                    child: Container(
-                      width: 60,
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 16,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            isSelected
-                                ? Theme.of(context).primaryColor
-                                : Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            DateFormat.E().format(date),
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: isSelected ? Colors.white : Colors.black,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            date.day.toString(),
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: isSelected ? Colors.white : Colors.black,
-                            ),
-                          ),
-                        ],
-                      ),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Text(
+                    DateFormat.yMMMM().format(_selectedDate),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
                     ),
-                  );
-                },
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _selectedDate = DateTime(
+                          _selectedDate.year,
+                          _selectedDate.month + 1,
+                        );
+                        _pageController.animateToPage(
+                          _selectedDate.day - 1,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
+                      });
+                    },
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
               ),
             ),
-            // Habits and PieChart
+
+            // Horizontal Scrollable Date Picker
+            _buildDateSelector(),
+
+            // Selected date info
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    DateFormat('EEEE, MMMM d, y').format(_selectedDate),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Habits List
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream:
@@ -170,362 +706,158 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                     return const Center(
-                      child: Text('No habits for selected day.'),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_task, size: 64, color: Colors.grey),
+                          SizedBox(height: 16),
+                          Text(
+                            'No habits yet!',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            'Tap + to create your first habit',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
                     );
                   }
 
-                  final today = _selectedDate;
-                  final todayWeekday =
-                      [
-                        'Monday',
-                        'Tuesday',
-                        'Wednesday',
-                        'Thursday',
-                        'Friday',
-                        'Saturday',
-                        'Sunday',
-                      ][today.weekday - 1];
-
-                  final habits =
-                      snapshot.data!.docs.where((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        final repeatType = data['repeatType'];
-                        final selectedDays = List<String>.from(
-                          data['selectedDays'] ?? [],
-                        );
-                        final selectedDate =
-                            (data['selectedDate'] as Timestamp?)?.toDate();
-
-                        if (repeatType == 'Once') {
-                          return selectedDate != null &&
-                              selectedDate.year == today.year &&
-                              selectedDate.month == today.month &&
-                              selectedDate.day == today.day;
-                        } else if (repeatType == 'Weekly') {
-                          return selectedDays.contains(todayWeekday);
-                        }
-
-                        return false;
-                      }).toList();
-
-                  final totalCount = habits.length;
-
+                  final habits = _getHabitsForDate(
+                    snapshot.data!.docs,
+                    _selectedDate,
+                  );
                   final formattedDate = DateFormat(
                     'yyyy-MM-dd',
                   ).format(_selectedDate);
 
-                  double totalPercentComplete = 0;
-                  int percentBasedHabits = 0;
-                  int daysCompleted = 0;
-                  int totalDaysThisMonth = 0;
-                  final currentMonth = _selectedDate.month;
-                  final currentYear = _selectedDate.year;
+                  if (habits.isEmpty) {
+                    return const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.event_available,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'No habits for this date',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            'Select another date or create new habits',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  // Calculate stats - Only count up to 100% per habit for overall progress
+                  int totalHabits = habits.length;
+                  int completedHabits = 0;
+                  double totalProgress = 0;
 
                   for (var habit in habits) {
                     final data = habit.data() as Map<String, dynamic>;
+                    final repeatType = data['repeatType'];
                     final dailyCompletion = data['dailyCompletion'] ?? {};
                     final entry = dailyCompletion[formattedDate];
+                    final target = (data['targetValue'] ?? 0).toDouble();
 
-                    if (entry is Map<String, dynamic>) {
-                      double target =
-                          (data['targetValue'] as num?)?.toDouble() ?? 0.0;
-
-                      final double value =
-                          double.tryParse(entry['value'].toString()) ?? 0.0;
-
-                      if (target > 0 && value >= target) {
-                        daysCompleted++;
+                    if (repeatType == 'Repeat Till Done') {
+                      final isCompleted = data['isCompleted'] ?? false;
+                      if (isCompleted) {
+                        completedHabits++;
+                        totalProgress += 1.0;
                       }
-
-                      if (target > 0) {
-                        totalPercentComplete += (value / target).clamp(
-                          0.0,
-                          1.0,
-                        );
-                        percentBasedHabits += 1;
+                    } else {
+                      if (entry is Map<String, dynamic>) {
+                        final value = (entry['value'] ?? 0).toDouble();
+                        // Cap individual habit progress at 1.0 (100%) for overall calculation
+                        final progress =
+                            target > 0 ? (value / target).clamp(0.0, 1.0) : 0.0;
+                        totalProgress += progress;
+                        if (value >= target)
+                          completedHabits++; // Mark as completed if target met
                       }
                     }
                   }
 
-                  final double completedCount = totalPercentComplete;
-                  final double incompleteCount =
-                      totalCount - totalPercentComplete;
+                  final overallProgress =
+                      totalHabits > 0 ? totalProgress / totalHabits : 0.0;
+
                   return SingleChildScrollView(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
-                        ...habits.map((habit) {
-                          final data = habit.data() as Map<String, dynamic>;
-                          final dailyCompletion =
-                              data['dailyCompletion'] ?? {}; // Moved this up
-
-                          final entry =
-                              dailyCompletion[formattedDate]; // Now this works fine
-                          double value = 0;
-                          double target =
-                              (data['targetValue'] ?? 0)
-                                  .toDouble(); // use `data` instead of `habit[...]`
-
-                          if (entry is Map<String, dynamic>) {
-                            value = (entry['value'] ?? 0).toDouble();
-                          }
-
-                          bool isMeasurable = target > 0;
-
-                          final title = data['title'] ?? '';
-                          final description = data['description'] ?? '';
-
-                          // Calculate progress over this month
-
-                          dailyCompletion.forEach((key, value) {
-                            final date = DateTime.tryParse(key);
-                            if (date == null ||
-                                date.month != currentMonth ||
-                                date.year != currentYear) {
-                              return;
-                            }
-
-                            if (value == true) {
-                              daysCompleted++;
-                            } else if (value is Map<String, dynamic>) {
-                              final double target =
-                                  double.tryParse(
-                                    value['target']?.toString() ?? '0',
-                                  ) ??
-                                  0.0;
-                              final double achieved =
-                                  double.tryParse(
-                                    value['value']?.toString() ?? '0',
-                                  ) ??
-                                  0.0;
-                              if (target > 0 && achieved / target >= 1.0) {
-                                daysCompleted++;
-                              }
-                            }
-                          });
-
-                          // Optional: You can decide what "total" means — for now, using days till today
-                          totalDaysThisMonth = DateTime.now().day;
-                          final progress =
-                              totalDaysThisMonth > 0
-                                  ? daysCompleted / totalDaysThisMonth
-                                  : 0.0;
-
-                          final isCompleted =
-                              entry is Map<String, dynamic>
-                                  ? (double.tryParse(
-                                            entry['value']?.toString() ?? '0',
-                                          ) ??
-                                          0.0) >=
-                                      (double.tryParse(
-                                            entry['target']?.toString() ?? '0',
-                                          ) ??
-                                          0.0)
-                                  : (entry == true);
-
-                          return Card(
-                            margin: const EdgeInsets.symmetric(vertical: 6),
-                            elevation: 2,
-                            child: InkWell(
-                              onTap: () {
-                                context.goNamed(
-                                  AppRoutes.addEdit,
-                                  extra: {
-                                    'habitId': habit.id,
-                                    'existingTitle': title,
-                                    'existingDescription': description,
-                                  },
-                                );
-                              },
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                title: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      title,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 16,
-                                        decoration:
-                                            isCompleted
-                                                ? TextDecoration.lineThrough
-                                                : null,
-                                      ),
-                                    ),
-                                    if (isMeasurable)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          top: 6.0,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: Row(
-                                                children: [
-                                                  Expanded(
-                                                    flex: 3,
-                                                    child: Slider(
-                                                      value: value,
-                                                      min: 0,
-                                                      max: target,
-                                                      divisions:
-                                                          target < 1
-                                                              ? null
-                                                              : target.toInt(),
-                                                      label:
-                                                          "${value.toStringAsFixed(1)}",
-                                                      onChanged: (newValue) {
-                                                        setState(() {
-                                                          value = newValue;
-                                                        });
-
-                                                        FirebaseFirestore
-                                                            .instance
-                                                            .collection(
-                                                              'habits',
-                                                            )
-                                                            .doc(habit.id)
-                                                            .update({
-                                                              'dailyCompletion.$formattedDate':
-                                                                  {
-                                                                    'value':
-                                                                        newValue,
-                                                                    'target':
-                                                                        target,
-                                                                  },
-                                                            });
-                                                      },
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    flex: 1,
-                                                    child: TextFormField(
-                                                      initialValue:
-                                                          value
-                                                              .toInt()
-                                                              .toString(),
-                                                      keyboardType:
-                                                          TextInputType.number,
-                                                      decoration: InputDecoration(
-                                                        border:
-                                                            OutlineInputBorder(),
-                                                        isDense: true,
-                                                        contentPadding:
-                                                            EdgeInsets.symmetric(
-                                                              vertical: 8,
-                                                              horizontal: 8,
-                                                            ),
-                                                      ),
-                                                      onFieldSubmitted: (
-                                                        newVal,
-                                                      ) {
-                                                        final parsed =
-                                                            double.tryParse(
-                                                              newVal,
-                                                            ) ??
-                                                            0.0;
-                                                        final newValue =
-                                                            parsed
-                                                                .clamp(
-                                                                  0,
-                                                                  target,
-                                                                )
-                                                                .toDouble();
-
-                                                        setState(() {
-                                                          value = newValue;
-                                                        });
-
-                                                        FirebaseFirestore
-                                                            .instance
-                                                            .collection(
-                                                              'habits',
-                                                            )
-                                                            .doc(habit.id)
-                                                            .update({
-                                                              'dailyCompletion.$formattedDate':
-                                                                  {
-                                                                    'value':
-                                                                        newValue,
-                                                                    'target':
-                                                                        target,
-                                                                  },
-                                                            });
-                                                      },
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            Text("/ $target"),
-                                          ],
+                        // Progress summary
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Today\'s Progress',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.grey.shade700,
                                         ),
                                       ),
-                                  ],
-                                ),
-                                trailing: CircularPercentIndicator(
-                                  radius: 25.0,
-                                  lineWidth: 5.0,
-                                  percent:
-                                      isMeasurable
-                                          ? (value / target).clamp(0.0, 1.0)
-                                          : progress.clamp(0.0, 1.0),
-                                  center: Text(
-                                    isMeasurable
-                                        ? "${((value / target) * 100).clamp(0, 100).toStringAsFixed(0)}%"
-                                        : "${(progress * 100).toStringAsFixed(0)}%",
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '$completedHabits of $totalHabits habits completed',
+                                        style: const TextStyle(fontSize: 14),
+                                      ),
+                                    ],
                                   ),
-                                  progressColor: Colors.blue,
+                                ),
+                                CircularPercentIndicator(
+                                  radius: 30,
+                                  lineWidth: 6.0,
+                                  percent: overallProgress,
+                                  center: Text(
+                                    "${(overallProgress * 100).toStringAsFixed(0)}%",
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  progressColor:
+                                      overallProgress > 0.7
+                                          ? Colors.green
+                                          : Colors.blue,
                                   backgroundColor: Colors.grey.shade300,
                                 ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                        SizedBox(height: 20),
-                        if (totalCount > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 16),
-                            child: SizedBox(
-                              height: 150,
-                              child: PieChart(
-                                PieChartData(
-                                  sectionsSpace: 2,
-                                  centerSpaceRadius: 40,
-                                  sections: [
-                                    PieChartSectionData(
-                                      value: completedCount,
-                                      color: Colors.green,
-                                      title:
-                                          totalCount > 0
-                                              ? '${((completedCount / totalCount) * 100).toStringAsFixed(0)}%'
-                                              : '0%',
-
-                                      radius: 60,
-                                      titleStyle: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    PieChartSectionData(
-                                      value: incompleteCount,
-                                      color: Colors.redAccent,
-                                      title: '',
-                                      radius: 60,
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              ],
                             ),
                           ),
+                        ),
 
-                        const SizedBox(height: 60), // Spacer for scroll comfort
+                        const SizedBox(height: 16),
+
+                        // Habits list
+                        ...habits.map(
+                          (habit) =>
+                              _buildHabitCard(habit, formattedDate, isPastDate),
+                        ),
+
+                        const SizedBox(height: 80), // Bottom padding
                       ],
                     ),
                   );
@@ -535,6 +867,17 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+      // FIXED: Only show FAB if BottomNavScaffold doesn't provide one
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.goNamed(AppRoutes.addEdit),
+        child: const Icon(Icons.add),
+      ),
     );
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 }

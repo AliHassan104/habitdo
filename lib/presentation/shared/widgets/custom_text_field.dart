@@ -11,6 +11,7 @@ class CustomTextField extends StatelessWidget {
   final VoidCallback? onSuffixTap;
   final int maxLines;
   final bool autofocus;
+  final int? maxLength;
 
   const CustomTextField({
     super.key,
@@ -24,21 +25,24 @@ class CustomTextField extends StatelessWidget {
     this.onSuffixTap,
     this.maxLines = 1,
     this.autofocus = false,
+    this.maxLength,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 30.0, vertical: 8.0),
+      padding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: 8.0),
       child: TextFormField(
         controller: controller,
         obscureText: obscureText,
         keyboardType: keyboardType,
         maxLines: maxLines,
+        maxLength: maxLength,
         style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
         decoration: InputDecoration(
           hintText: hintText,
           labelText: labelText,
+          counterText: '',
           labelStyle: TextStyle(
             color: Theme.of(context).textTheme.bodySmall?.color,
           ),

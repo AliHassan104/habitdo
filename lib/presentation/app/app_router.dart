@@ -73,8 +73,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/dashboard',
       name: AppRoutes.dashboard,
-      pageBuilder:
-          (context, state) => const MaterialPage(child: DashboardScreen()),
+      pageBuilder: (context, state) => MaterialPage(child: DashboardScreen()),
     ),
     GoRoute(
       path: '/onboarding',
@@ -102,16 +101,6 @@ final GoRouter appRouter = GoRouter(
 
     return null;
   },
-
-  // Optional redirect logic
-  //redirect: (context, state) async {
-  // Simulate onboarding check
-  // final isFirstLaunch = false; // Replace with actual logic
-  // if (isFirstLaunch && state.location != '/onboarding') {
-  //   return '/onboarding';
-  // }
-  // return null;
-  //},
 
   // Handle 404s
   errorPageBuilder:
