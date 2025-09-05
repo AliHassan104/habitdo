@@ -185,6 +185,120 @@ class _DashboardScreenState extends State<DashboardScreen> {
         now.isBefore(end.add(const Duration(days: 1)));
   }
 
+  /// Helper method to check if a habit is active on a specific date
+  bool _isHabitActiveOnDate(Map<String, dynamic> data, DateTime date) {
+    final repeatType = data['repeatType'];
+    final selectedDays = List<String>.from(data['selectedDays'] ?? []);
+    final selectedDate = (data['selectedDate'] as Timestamp?)?.toDate();
+    final startDate = (data['startDate'] as Timestamp?)?.toDate();
+    final endDate = (data['endDate'] as Timestamp?)?.toDate();
+    final weekday = DateFormat.E().format(date).substring(0, 3);
+
+    switch (repeatType) {
+      case 'Repeat Till Done':
+        if (selectedDate != null &&
+            selectedDate.year == date.year &&
+            selectedDate.month == date.month &&
+            selectedDate.day == date.day) {
+          return true;
+        }
+        break;
+      case 'Weekly':
+        if (startDate != null &&
+            endDate != null &&
+            selectedDays.contains(weekday) &&
+            date.isAfter(startDate.subtract(const Duration(days: 1))) &&
+            date.isBefore(endDate.add(const Duration(days: 1)))) {
+          return true;
+        }
+        break;
+      case 'Weekly Flexible':
+        // For flexible weekly habits, any day within the date range is active
+        if (startDate != null &&
+            endDate != null &&
+            date.isAfter(startDate.subtract(const Duration(days: 1))) &&
+            date.isBefore(endDate.add(const Duration(days: 1)))) {
+          return true;
+        }
+        break;
+    }
+    return false;
+  }
+
+  /// Helper method to calculate weekly flexible completion
+  Map<String, dynamic> _calculateWeeklyFlexibleProgress(
+    Map<String, dynamic> data,
+    DateTime start,
+    DateTime end,
+  ) {
+    final completionMap = Map<String, dynamic>.from(
+      data['dailyCompletion'] ?? {},
+    );
+    final daysPerWeek = (data['daysPerWeek'] as num?)?.toInt() ?? 3;
+    final targetValue = (data['targetValue'] as num?)?.toDouble() ?? 1.0;
+
+    // Group days by week and calculate completion
+    Map<String, List<DateTime>> weeklyDates = {};
+    int totalCompletedDays = 0;
+    int totalPossibleDays = 0;
+    double totalAchievedValue = 0;
+    double totalTargetValue = 0;
+
+    for (
+      DateTime date = start;
+      !date.isAfter(end);
+      date = date.add(const Duration(days: 1))
+    ) {
+      if (_isHabitActiveOnDate(data, date)) {
+        // Get the Monday of this week as the key
+        final weekStart = date.subtract(Duration(days: date.weekday - 1));
+        final weekKey = DateFormat('yyyy-MM-dd').format(weekStart);
+
+        weeklyDates.putIfAbsent(weekKey, () => []);
+        weeklyDates[weekKey]!.add(date);
+      }
+    }
+
+    // For each week, check how many days were completed vs target
+    weeklyDates.forEach((weekKey, datesInWeek) {
+      int completedInWeek = 0;
+      int targetForWeek = daysPerWeek.clamp(0, datesInWeek.length);
+      totalPossibleDays += targetForWeek;
+
+      for (DateTime date in datesInWeek) {
+        final dateString = DateFormat('yyyy-MM-dd').format(date);
+        final entry = completionMap[dateString];
+        totalTargetValue += targetValue;
+
+        if (entry != null) {
+          bool dayCompleted = false;
+          if (entry is bool && entry) {
+            dayCompleted = true;
+          } else if (entry is Map<String, dynamic>) {
+            final achievedValue = (entry['value'] as num?)?.toDouble() ?? 0.0;
+            totalAchievedValue += achievedValue;
+            if (achievedValue >= targetValue) {
+              dayCompleted = true;
+            }
+          }
+
+          if (dayCompleted && completedInWeek < targetForWeek) {
+            completedInWeek++;
+          }
+        }
+      }
+
+      totalCompletedDays += completedInWeek;
+    });
+
+    return {
+      'completedDays': totalCompletedDays,
+      'totalDays': totalPossibleDays,
+      'totalAchievedValue': totalAchievedValue,
+      'totalTargetValue': totalTargetValue,
+    };
+  }
+
   Future<List<Map<String, dynamic>>> _fetchHabitData() async {
     if (currentUser == null) return [];
 
@@ -213,73 +327,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final completionMap = Map<String, dynamic>.from(
           data['dailyCompletion'],
         );
-        int completedDays = 0; // Count of days where target was met
-        int totalDays = 0; // Total active days in the period
-        double totalAchievedValue = 0; // Track total achieved value
-        double totalTargetValue = 0; // Track total target value
-
         final repeatType = data['repeatType'];
-        final selectedDays = List<String>.from(data['selectedDays'] ?? []);
-        final selectedDate = (data['selectedDate'] as Timestamp?)?.toDate();
 
-        for (
-          DateTime date = start;
-          !date.isAfter(end);
-          date = date.add(const Duration(days: 1))
-        ) {
-          final dateString = DateFormat('yyyy-MM-dd').format(date);
-          final weekday = DateFormat.E().format(date).substring(0, 3);
+        int completedDays = 0;
+        int totalDays = 0;
+        double totalAchievedValue = 0;
+        double totalTargetValue = 0;
 
-          bool isActive = false;
+        if (repeatType == 'Weekly Flexible') {
+          // Use special calculation for weekly flexible habits
+          final flexibleProgress = _calculateWeeklyFlexibleProgress(
+            data,
+            start,
+            end,
+          );
+          completedDays = flexibleProgress['completedDays'];
+          totalDays = flexibleProgress['totalDays'];
+          totalAchievedValue = flexibleProgress['totalAchievedValue'];
+          totalTargetValue = flexibleProgress['totalTargetValue'];
+        } else {
+          // Standard calculation for other habit types
+          final selectedDays = List<String>.from(data['selectedDays'] ?? []);
+          final selectedDate = (data['selectedDate'] as Timestamp?)?.toDate();
+          final targetValue = (data['targetValue'] as num?)?.toDouble() ?? 0.0;
 
-          // Check if this day is active for this habit
-          if (repeatType == 'Repeat Till Done') {
-            if (selectedDate != null &&
-                selectedDate.year == date.year &&
-                selectedDate.month == date.month &&
-                selectedDate.day == date.day) {
-              isActive = true;
-            }
-          } else if (repeatType == 'Weekly') {
-            // Check if date is within start/end range and on selected weekday
-            final habitStartDate = (data['startDate'] as Timestamp?)?.toDate();
-            final habitEndDate = (data['endDate'] as Timestamp?)?.toDate();
+          for (
+            DateTime date = start;
+            !date.isAfter(end);
+            date = date.add(const Duration(days: 1))
+          ) {
+            if (_isHabitActiveOnDate(data, date)) {
+              totalDays++;
+              final dateString = DateFormat('yyyy-MM-dd').format(date);
+              final entry = completionMap[dateString];
 
-            if (habitStartDate != null &&
-                habitEndDate != null &&
-                selectedDays.contains(weekday) &&
-                date.isAfter(
-                  habitStartDate.subtract(const Duration(days: 1)),
-                ) &&
-                date.isBefore(habitEndDate.add(const Duration(days: 1)))) {
-              isActive = true;
-            }
-          }
-
-          if (isActive) {
-            totalDays++;
-            final entry = completionMap[dateString];
-            final targetValue =
-                (data['targetValue'] as num?)?.toDouble() ?? 0.0;
-
-            if (entry != null) {
-              if (entry is bool && entry) {
-                // Simple boolean completion
-                completedDays++;
-              } else if (entry is Map<String, dynamic>) {
-                final achievedValue =
-                    (entry['value'] as num?)?.toDouble() ?? 0.0;
-                totalAchievedValue += achievedValue;
-                totalTargetValue += targetValue;
-
-                // Count as completed day ONLY if target was met or exceeded
-                if (targetValue > 0 && achievedValue >= targetValue) {
+              if (entry != null) {
+                if (entry is bool && entry) {
                   completedDays++;
+                } else if (entry is Map<String, dynamic>) {
+                  final achievedValue =
+                      (entry['value'] as num?)?.toDouble() ?? 0.0;
+                  totalAchievedValue += achievedValue;
+                  totalTargetValue += targetValue;
+
+                  if (targetValue > 0 && achievedValue >= targetValue) {
+                    completedDays++;
+                  }
                 }
+              } else {
+                totalTargetValue += targetValue;
               }
-            } else {
-              // No entry for this day, add to total target
-              totalTargetValue += targetValue;
             }
           }
         }
@@ -288,18 +385,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
           habitSummaries.add({
             'id': doc.id,
             'title': data['title'],
-            'completedDays': completedDays, // Days where target was met
-            'totalDays': totalDays, // Total active days
+            'repeatType': repeatType,
+            'completedDays': completedDays,
+            'totalDays': totalDays,
             'completionPercent': (completedDays / totalDays * 100).clamp(
               0,
               100,
             ),
             'targetValue': data['targetValue'],
-            'targetUnit': data['targetUnit'],
-            'totalAchievedValue':
-                totalAchievedValue, // Total achieved across all days
-            'totalTargetValue':
-                totalTargetValue, // Total target across all days
+            'targetUnit': data['targetUnit'] ?? 'times',
+            'totalAchievedValue': totalAchievedValue,
+            'totalTargetValue': totalTargetValue,
+            'daysPerWeek': data['daysPerWeek'], // For weekly flexible display
           });
         }
       }
@@ -307,7 +404,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       habitSummaries.sort(
         (a, b) => b['completionPercent'].compareTo(a['completionPercent']),
       );
-
       return habitSummaries;
     } catch (e) {
       setState(() => _errorMessage = 'Failed to load data: ${e.toString()}');
@@ -424,7 +520,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Column(
         children: [
-          // Period Type Selector
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
@@ -472,7 +567,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          // Date Navigation
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -482,13 +576,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Icons.chevron_left,
                   color:
                       Theme.of(context).textTheme.bodyLarge?.color ??
-                      Colors.black, // Fixed dark mode visibility
+                      Colors.black,
                 ),
                 style: IconButton.styleFrom(
                   backgroundColor: Theme.of(context).cardColor,
                   foregroundColor:
                       Theme.of(context).textTheme.bodyLarge?.color ??
-                      Colors.black, // Fixed dark mode visibility
+                      Colors.black,
                 ),
               ),
               Expanded(
@@ -528,13 +622,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Icons.chevron_right,
                   color:
                       Theme.of(context).textTheme.bodyLarge?.color ??
-                      Colors.black, // Fixed dark mode visibility
+                      Colors.black,
                 ),
                 style: IconButton.styleFrom(
                   backgroundColor: Theme.of(context).cardColor,
                   foregroundColor:
                       Theme.of(context).textTheme.bodyLarge?.color ??
-                      Colors.black, // Fixed dark mode visibility
+                      Colors.black,
                 ),
               ),
             ],
@@ -617,7 +711,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final overallPercentage =
         totalPossible > 0 ? (totalCompleted / totalPossible * 100).round() : 0;
 
-    // Calculate streak and best habit
     final bestHabit = data.isNotEmpty ? data.first : null;
     final activeHabits = data.length;
 
@@ -764,9 +857,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     sectionsSpace: 2,
                     centerSpaceRadius: 50,
                     pieTouchData: PieTouchData(
-                      touchCallback: (FlTouchEvent event, pieTouchResponse) {
-                        // Add touch interaction if needed
-                      },
+                      touchCallback: (FlTouchEvent event, pieTouchResponse) {},
                     ),
                   ),
                 ),
@@ -850,6 +941,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final isMeasurable =
         habit['targetValue'] != null && habit['targetValue'] > 0;
     final progress = habit['completionPercent'] / 100;
+    final repeatType = habit['repeatType'] ?? '';
 
     // Get achieved vs target values for display
     final totalAchieved = habit['totalAchievedValue']?.toDouble() ?? 0.0;
@@ -897,29 +989,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _getCompletionColor(habit['completionPercent']),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '${habit['completionPercent'].toStringAsFixed(0)}%',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                    Row(
+                      children: [
+                        // Habit type indicator
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getHabitTypeColor(
+                              repeatType,
+                            ).withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _getHabitTypeLabel(repeatType),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: _getHabitTypeColor(repeatType),
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        // Completion percentage
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getCompletionColor(
+                              habit['completionPercent'],
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            '${habit['completionPercent'].toStringAsFixed(0)}%',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                if (isMeasurable) ...[
-                  // Show achieved vs target values
+
+                // Special display for Weekly Flexible habits
+                if (repeatType == 'Weekly Flexible') ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.teal[50],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Target: ${habit['daysPerWeek'] ?? 3} days/week',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.teal[700],
+                      ),
+                    ),
+                  ),
+                ] else if (isMeasurable) ...[
+                  // Show achieved vs target values for measurable habits
                   Row(
                     children: [
                       Container(
@@ -1015,7 +1156,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '${completedDays}/${totalDays} days completed',
+                      repeatType == 'Weekly Flexible'
+                          ? '${completedDays}/${totalDays} weekly targets met'
+                          : '${completedDays}/${totalDays} days completed',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontWeight: FontWeight.w500,
                       ),
@@ -1040,5 +1183,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (percentage >= 60) return Colors.lightGreen;
     if (percentage >= 40) return Colors.orange;
     return Colors.red;
+  }
+
+  Color _getHabitTypeColor(String repeatType) {
+    switch (repeatType) {
+      case 'Repeat Till Done':
+        return Colors.purple;
+      case 'Weekly Flexible':
+        return Colors.teal;
+      case 'Weekly':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getHabitTypeLabel(String repeatType) {
+    switch (repeatType) {
+      case 'Repeat Till Done':
+        return 'Till Done';
+      case 'Weekly Flexible':
+        return 'Flexible';
+      case 'Weekly':
+        return 'Weekly';
+      default:
+        return 'Other';
+    }
   }
 }

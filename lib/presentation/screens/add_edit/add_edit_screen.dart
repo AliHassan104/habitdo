@@ -29,6 +29,7 @@ class _AddEditScreenState extends State<AddEditScreen> {
     _targetValueController.dispose();
     _targetUnitController.dispose();
     _categoryController.dispose();
+    _daysPerWeekController.dispose();
     super.dispose();
   }
 
@@ -38,6 +39,9 @@ class _AddEditScreenState extends State<AddEditScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _categoryController = TextEditingController();
+  final TextEditingController _daysPerWeekController = TextEditingController(
+    text: '3',
+  ); // Default 3 days per week
   String _repeatType = 'Repeat Till Done';
   DateTime? _selectedDate;
   DateTime? _startDate;
@@ -94,6 +98,8 @@ class _AddEditScreenState extends State<AddEditScreen> {
                     (data['targetUnit'] ?? '').toString();
                 _repeatType = data['repeatType'] ?? 'Repeat Till Done';
                 _priority = data['priority'] ?? 'Medium';
+                _daysPerWeekController.text =
+                    (data['daysPerWeek'] ?? 3).toString();
 
                 // Handle dates
                 _selectedDate =
@@ -134,16 +140,20 @@ class _AddEditScreenState extends State<AddEditScreen> {
     final targetValue = _targetValueController.text.trim();
     final targetUnit = _targetUnitController.text.trim();
 
-    // Validation
-    if (title.isEmpty ||
-        description.isEmpty ||
-        targetValue.isEmpty ||
-        targetUnit.isEmpty) {
-      _showSnackBar('Please fill in all required fields');
+    // UPDATED VALIDATION - Only title and target value are required
+    if (title.isEmpty) {
+      _showSnackBar('Please enter a habit title');
       setState(() => _isSaving = false);
       return;
     }
 
+    if (targetValue.isEmpty) {
+      _showSnackBar('Please enter a target value');
+      setState(() => _isSaving = false);
+      return;
+    }
+
+    // Validate repeat type specific requirements
     if (_repeatType == 'Weekly' && _selectedDays.isEmpty) {
       _showSnackBar('Please select at least one day for weekly habits');
       setState(() => _isSaving = false);
@@ -158,27 +168,40 @@ class _AddEditScreenState extends State<AddEditScreen> {
       return;
     }
 
-    if (_repeatType == 'Weekly' && (_startDate == null || _endDate == null)) {
+    if ((_repeatType == 'Weekly' || _repeatType == 'Weekly Flexible') &&
+        (_startDate == null || _endDate == null)) {
       _showSnackBar('Please select both start and end dates for weekly habits');
       setState(() => _isSaving = false);
       return;
     }
 
-    if (_repeatType == 'Weekly' && _endDate!.isBefore(_startDate!)) {
+    if ((_repeatType == 'Weekly' || _repeatType == 'Weekly Flexible') &&
+        _endDate!.isBefore(_startDate!)) {
       _showSnackBar('End date must be after start date');
       setState(() => _isSaving = false);
       return;
     }
 
+    if (_repeatType == 'Weekly Flexible') {
+      final daysPerWeek = int.tryParse(_daysPerWeekController.text) ?? 0;
+      if (daysPerWeek < 1 || daysPerWeek > 7) {
+        _showSnackBar('Days per week must be between 1 and 7');
+        setState(() => _isSaving = false);
+        return;
+      }
+    }
+
     try {
       final habitData = {
         'title': title,
-        'description': description,
-        'category': category,
+        'description':
+            description.isEmpty ? null : description, // Allow empty description
+        'category': category.isEmpty ? null : category, // Allow empty category
         'priority': _priority,
         'repeatType': _repeatType,
         'targetValue': double.tryParse(targetValue),
-        'targetUnit': targetUnit,
+        'targetUnit':
+            targetUnit.isEmpty ? 'times' : targetUnit, // Default unit if empty
         'uid': currentUser?.uid,
         'dailyCompletion': {},
         'isCompleted': false, // For "Repeat Till Done" habits
@@ -189,17 +212,26 @@ class _AddEditScreenState extends State<AddEditScreen> {
                 : null,
       };
 
-      // Add dates based on repeat type
+      // Add dates and days based on repeat type
       if (_repeatType == 'Repeat Till Done') {
         habitData['selectedDate'] = Timestamp.fromDate(_selectedDate!);
         habitData['selectedDays'] = [];
         habitData['startDate'] = null;
         habitData['endDate'] = null;
+        habitData['daysPerWeek'] = null;
       } else if (_repeatType == 'Weekly') {
         habitData['selectedDays'] = _selectedDays;
         habitData['startDate'] = Timestamp.fromDate(_startDate!);
         habitData['endDate'] = Timestamp.fromDate(_endDate!);
         habitData['selectedDate'] = null;
+        habitData['daysPerWeek'] = null;
+      } else if (_repeatType == 'Weekly Flexible') {
+        habitData['selectedDays'] = []; // No specific days
+        habitData['startDate'] = Timestamp.fromDate(_startDate!);
+        habitData['endDate'] = Timestamp.fromDate(_endDate!);
+        habitData['selectedDate'] = null;
+        habitData['daysPerWeek'] =
+            int.tryParse(_daysPerWeekController.text) ?? 3;
       }
 
       if (widget.habitId == null) {
@@ -409,6 +441,107 @@ class _AddEditScreenState extends State<AddEditScreen> {
           ),
         ],
       );
+    } else if (_repeatType == 'Weekly Flexible') {
+      return Column(
+        children: [
+          // Start Date
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 0.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Start Date', style: TextStyle(fontSize: 16)),
+                ElevatedButton(
+                  onPressed: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate: _startDate ?? DateTime.now(),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime(2100),
+                    );
+                    if (date != null) {
+                      setState(() {
+                        _startDate = date;
+                      });
+                    }
+                  },
+                  child: const Text('Select Start'),
+                ),
+              ],
+            ),
+          ),
+          if (_startDate != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4.0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '📅 Start: ${DateFormat.yMMMd().format(_startDate!)}',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          // End Date
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 0.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('End Date', style: TextStyle(fontSize: 16)),
+                ElevatedButton(
+                  onPressed: () async {
+                    final date = await showDatePicker(
+                      context: context,
+                      initialDate:
+                          _endDate ??
+                          _startDate ??
+                          DateTime.now().add(const Duration(days: 30)),
+                      firstDate: _startDate ?? DateTime.now(),
+                      lastDate: DateTime(2100),
+                    );
+                    if (date != null) {
+                      setState(() {
+                        _endDate = date;
+                      });
+                    }
+                  },
+                  child: const Text('Select End'),
+                ),
+              ],
+            ),
+          ),
+          if (_endDate != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4.0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '📅 End: ${DateFormat.yMMMd().format(_endDate!)}',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                ),
+              ),
+            ),
+          const SizedBox(height: 16),
+          // Days per week input
+          CustomTextField(
+            controller: _daysPerWeekController,
+            hintText: 'How many days per week?',
+            labelText: 'Days per Week',
+            prefixIcon: Icons.calendar_view_week,
+            keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'You can complete this habit on any ${_daysPerWeekController.text.isNotEmpty ? _daysPerWeekController.text : "X"} days of the week',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      );
     }
     return const SizedBox.shrink();
   }
@@ -429,7 +562,12 @@ class _AddEditScreenState extends State<AddEditScreen> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+        padding: const EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          120,
+        ), // Increased bottom padding
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -447,8 +585,8 @@ class _AddEditScreenState extends State<AddEditScreen> {
             // Description
             CustomTextField(
               controller: _descriptionController,
-              hintText: 'Description',
-              labelText: 'Description *',
+              hintText: 'Description (optional)',
+              labelText: 'Description',
               prefixIcon: Icons.description,
               maxLines: 3,
             ),
@@ -513,7 +651,11 @@ class _AddEditScreenState extends State<AddEditScreen> {
                   ),
                   DropdownMenuItem(
                     value: 'Weekly',
-                    child: Text('Weekly (Date Range)'),
+                    child: Text('Weekly (Specific Days)'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Weekly Flexible',
+                    child: Text('Weekly Flexible (Any Days)'),
                   ),
                 ],
                 onChanged: (value) {
@@ -555,7 +697,7 @@ class _AddEditScreenState extends State<AddEditScreen> {
             CustomTextField(
               controller: _targetUnitController,
               hintText: 'Target Unit (e.g., minutes, pages, reps)',
-              labelText: 'Target Unit *',
+              labelText: 'Target Unit',
               prefixIcon: Icons.straighten,
             ),
             const SizedBox(height: 16),
@@ -620,83 +762,87 @@ class _AddEditScreenState extends State<AddEditScreen> {
                   ),
                 ),
             ],
-
-            // Delete Button (for editing)
-            if (isEditing) ...[
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.delete),
-                label: const Text('Delete Habit'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(48),
-                ),
-                onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder:
-                        (context) => AlertDialog(
-                          title: const Text('Delete Habit'),
-                          content: const Text(
-                            'Are you sure you want to delete this habit? This action cannot be undone.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                              ),
-                              child: const Text('Delete'),
-                            ),
-                          ],
-                        ),
-                  );
-
-                  if (confirm == true) {
-                    await FirebaseFirestore.instance
-                        .collection('habits')
-                        .doc(widget.habitId)
-                        .delete();
-
-                    if (context.mounted) {
-                      _showSnackBar('Habit deleted successfully');
-                      context.go('/home');
-                    }
-                  }
-                },
-              ),
-            ],
+            const SizedBox(height: 24),
           ],
         ),
       ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 12.0),
-        child: FloatingActionButton.extended(
-          onPressed: _isSaving ? null : _saveHabit,
-          icon:
+      // FIXED: Better positioned floating action button
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          // Save/Update Button
+          FloatingActionButton.extended(
+            onPressed: _isSaving ? null : _saveHabit,
+            heroTag: "save_button", // Unique hero tag
+            icon:
+                _isSaving
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                    : const Icon(Icons.save),
+            label: Text(
               _isSaving
-                  ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
-                  )
-                  : const Icon(Icons.save),
-          label: Text(
-            _isSaving
-                ? (isEditing ? 'Updating...' : 'Saving...')
-                : (isEditing ? 'Update Habit' : 'Save Habit'),
+                  ? (isEditing ? 'Updating...' : 'Saving...')
+                  : (isEditing ? 'Update Habit' : 'Save Habit'),
+            ),
+            backgroundColor: Theme.of(context).primaryColor,
+            foregroundColor: Colors.white,
           ),
-          backgroundColor: Theme.of(context).primaryColor,
-          foregroundColor: Colors.white,
-        ),
+
+          // Delete Button (for editing only)
+          if (isEditing) ...[
+            const SizedBox(height: 12),
+            FloatingActionButton.extended(
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder:
+                      (context) => AlertDialog(
+                        title: const Text('Delete Habit'),
+                        content: const Text(
+                          'Are you sure you want to delete this habit? This action cannot be undone.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                            ),
+                            child: const Text('Delete'),
+                          ),
+                        ],
+                      ),
+                );
+
+                if (confirm == true) {
+                  await FirebaseFirestore.instance
+                      .collection('habits')
+                      .doc(widget.habitId)
+                      .delete();
+
+                  if (context.mounted) {
+                    _showSnackBar('Habit deleted successfully');
+                    context.go('/home');
+                  }
+                }
+              },
+              heroTag: "delete_button", // Unique hero tag
+              icon: const Icon(Icons.delete),
+              label: const Text('Delete Habit'),
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+          ],
+        ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );

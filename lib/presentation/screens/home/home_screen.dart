@@ -77,6 +77,15 @@ class _HomeScreenState extends State<HomeScreen> {
           return date.isAfter(startDate.subtract(const Duration(days: 1))) &&
               date.isBefore(endDate.add(const Duration(days: 1)));
         }
+      } else if (repeatType == 'Weekly Flexible') {
+        // NEW: Handle Weekly Flexible - show on any day within the date range
+        final startDate = (data['startDate'] as Timestamp?)?.toDate();
+        final endDate = (data['endDate'] as Timestamp?)?.toDate();
+
+        if (startDate != null && endDate != null) {
+          return date.isAfter(startDate.subtract(const Duration(days: 1))) &&
+              date.isBefore(endDate.add(const Duration(days: 1)));
+        }
       }
 
       return false;
@@ -241,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Calculate overall progress for this habit
     double overallProgress = 0.0;
-    if (repeatType == 'Weekly') {
+    if (repeatType == 'Weekly' || repeatType == 'Weekly Flexible') {
       int completedDays = 0;
       int totalValidDays = 0;
 
@@ -255,14 +264,36 @@ class _HomeScreenState extends State<HomeScreen> {
               endDate != null &&
               date.isAfter(startDate.subtract(const Duration(days: 1))) &&
               date.isBefore(endDate.add(const Duration(days: 1)))) {
-            totalValidDays++;
+            // For Weekly Flexible, count all days in range
+            // For Weekly, only count selected weekdays
+            bool shouldCount = true;
+            if (repeatType == 'Weekly') {
+              final selectedDays = List<String>.from(
+                data['selectedDays'] ?? [],
+              );
+              final weekday =
+                  [
+                    'Mon',
+                    'Tue',
+                    'Wed',
+                    'Thu',
+                    'Fri',
+                    'Sat',
+                    'Sun',
+                  ][date.weekday - 1];
+              shouldCount = selectedDays.contains(weekday);
+            }
 
-            if (value is Map<String, dynamic>) {
-              final achieved = (value['value'] ?? 0).toDouble();
-              final target = (value['target'] ?? 1).toDouble();
-              if (achieved >= target) completedDays++;
-            } else if (value == true) {
-              completedDays++;
+            if (shouldCount) {
+              totalValidDays++;
+
+              if (value is Map<String, dynamic>) {
+                final achieved = (value['value'] ?? 0).toDouble();
+                final target = (value['target'] ?? 1).toDouble();
+                if (achieved >= target) completedDays++;
+              } else if (value == true) {
+                completedDays++;
+              }
             }
           }
         }
@@ -338,7 +369,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   ),
-                  // Type indicator
+                  // Type indicator with enhanced labels
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -348,17 +379,25 @@ class _HomeScreenState extends State<HomeScreen> {
                       color:
                           repeatType == 'Repeat Till Done'
                               ? Colors.purple.shade100
+                              : repeatType == 'Weekly Flexible'
+                              ? Colors.teal.shade100
                               : Colors.blue.shade100,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      repeatType == 'Repeat Till Done' ? 'Till Done' : 'Weekly',
+                      repeatType == 'Repeat Till Done'
+                          ? 'Till Done'
+                          : repeatType == 'Weekly Flexible'
+                          ? 'Flexible'
+                          : 'Weekly',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
                         color:
                             repeatType == 'Repeat Till Done'
                                 ? Colors.purple.shade700
+                                : repeatType == 'Weekly Flexible'
+                                ? Colors.teal.shade700
                                 : Colors.blue.shade700,
                       ),
                     ),
@@ -397,7 +436,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               onFieldSubmitted: (newVal) {
                                 final parsed = double.tryParse(newVal) ?? 0.0;
-                                // REMOVED CLAMP - Allow any positive value
                                 final newValue = parsed < 0 ? 0.0 : parsed;
 
                                 // Update Firestore
@@ -501,15 +539,17 @@ class _HomeScreenState extends State<HomeScreen> {
                               0.0,
                               1.0,
                             ) // Cap display at 100%
-                            : (repeatType == 'Weekly'
+                            : (repeatType == 'Weekly' ||
+                                    repeatType == 'Weekly Flexible'
                                 ? overallProgress
                                 : (isCompleted ? 1.0 : 0.0)),
                     center: Text(
                       isMeasurable
                           ? "${((value / target) * 100).clamp(0, 100).toStringAsFixed(0)}%"
-                          : (repeatType == 'Weekly'
+                          : (repeatType == 'Weekly' ||
+                                  repeatType == 'Weekly Flexible'
                               ? "${(overallProgress * 100).toStringAsFixed(0)}%"
-                              : (isCompleted ? "âœ“" : "0%")),
+                              : (isCompleted ? "✓" : "0%")),
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -520,6 +560,78 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
+
+              // Show weekly flexible progress info
+              if (repeatType == 'Weekly Flexible')
+                Builder(
+                  builder: (context) {
+                    final daysPerWeek = data['daysPerWeek'] ?? 3;
+                    final startDate =
+                        (data['startDate'] as Timestamp?)?.toDate();
+                    final endDate = (data['endDate'] as Timestamp?)?.toDate();
+
+                    if (startDate != null && endDate != null) {
+                      // Calculate current week progress
+                      final now = DateTime.now();
+                      final weekStart = now.subtract(
+                        Duration(days: now.weekday - 1),
+                      );
+                      final weekEnd = weekStart.add(const Duration(days: 6));
+
+                      int completedThisWeek = 0;
+                      for (int i = 0; i < 7; i++) {
+                        final day = weekStart.add(Duration(days: i));
+                        final dayString = DateFormat('yyyy-MM-dd').format(day);
+                        final dayEntry = dailyCompletion[dayString];
+
+                        if (dayEntry != null) {
+                          if (dayEntry is bool && dayEntry) {
+                            completedThisWeek++;
+                          } else if (dayEntry is Map<String, dynamic>) {
+                            final achieved =
+                                (dayEntry['value'] ?? 0).toDouble();
+                            if (achieved >= target) completedThisWeek++;
+                          }
+                        }
+                      }
+
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.teal.shade200),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.calendar_view_week,
+                                size: 14,
+                                color: Colors.teal.shade600,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                "This week: $completedThisWeek/$daysPerWeek days",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.teal.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
 
               // Show backlog indicator for overdue "Repeat Till Done" habits
               if (repeatType == 'Repeat Till Done' && !isCompletedForever)
