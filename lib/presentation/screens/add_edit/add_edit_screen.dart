@@ -4,6 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:habitdo/presentation/shared/widgets/custom_text_field.dart';
 import 'package:intl/intl.dart';
+// Add these imports
+import 'package:habitdo/core/utils/error_handler.dart';
+import 'package:habitdo/core/utils/loading_widget.dart';
 
 class AddEditScreen extends StatefulWidget {
   final String? habitId;
@@ -80,131 +83,231 @@ class _AddEditScreenState extends State<AddEditScreen> {
   @override
   void initState() {
     super.initState();
+
     if (widget.habitId != null) {
-      FirebaseFirestore.instance
-          .collection('habits')
-          .doc(widget.habitId)
-          .get()
-          .then((doc) {
-            if (doc.exists) {
-              final data = doc.data()!;
-              setState(() {
-                _titleController.text = data['title'] ?? '';
-                _descriptionController.text = data['description'] ?? '';
-                _categoryController.text = data['category'] ?? '';
-                _targetValueController.text =
-                    (data['targetValue'] ?? '').toString();
-                _targetUnitController.text =
-                    (data['targetUnit'] ?? '').toString();
-                _repeatType = data['repeatType'] ?? 'Repeat Till Done';
-                _priority = data['priority'] ?? 'Medium';
-                _daysPerWeekController.text =
-                    (data['daysPerWeek'] ?? 3).toString();
+      _loadExistingHabit();
+    }
+  }
 
-                // Handle dates
-                _selectedDate =
-                    data['selectedDate'] != null
-                        ? (data['selectedDate'] as Timestamp).toDate()
-                        : null;
-                _startDate =
-                    data['startDate'] != null
-                        ? (data['startDate'] as Timestamp).toDate()
-                        : null;
-                _endDate =
-                    data['endDate'] != null
-                        ? (data['endDate'] as Timestamp).toDate()
-                        : null;
+  /// Load existing habit data with error handling
+  Future<void> _loadExistingHabit() async {
+    try {
+      final doc =
+          await FirebaseFirestore.instance
+              .collection('habits')
+              .doc(widget.habitId)
+              .get();
 
-                _selectedDays = List<String>.from(data['selectedDays'] ?? []);
-                _notificationsEnabled = data['notificationsEnabled'] ?? false;
-                if (data['notificationTime'] != null) {
-                  final parts = (data['notificationTime'] as String).split(':');
-                  _notificationTime = TimeOfDay(
-                    hour: int.parse(parts[0]),
-                    minute: int.parse(parts[1]),
-                  );
-                }
-              });
+      if (!doc.exists) {
+        if (mounted) {
+          ErrorHandler.showErrorDialog(
+            context,
+            title: 'Habit Not Found',
+            message: 'The habit you\'re trying to edit no longer exists.',
+            onCancel: () => context.go('/home'),
+          );
+        }
+        return;
+      }
+
+      final data = doc.data();
+      if (data == null) {
+        throw Exception('Habit data is empty');
+      }
+
+      if (mounted) {
+        setState(() {
+          _titleController.text = data['title'] ?? '';
+          _descriptionController.text = data['description'] ?? '';
+          _categoryController.text = data['category'] ?? '';
+          _targetValueController.text = (data['targetValue'] ?? '').toString();
+          _targetUnitController.text = (data['targetUnit'] ?? '').toString();
+          _repeatType = data['repeatType'] ?? 'Repeat Till Done';
+          _priority = data['priority'] ?? 'Medium';
+          _daysPerWeekController.text = (data['daysPerWeek'] ?? 3).toString();
+
+          // Handle dates safely
+          try {
+            _selectedDate =
+                data['selectedDate'] != null
+                    ? (data['selectedDate'] as Timestamp).toDate()
+                    : null;
+            _startDate =
+                data['startDate'] != null
+                    ? (data['startDate'] as Timestamp).toDate()
+                    : null;
+            _endDate =
+                data['endDate'] != null
+                    ? (data['endDate'] as Timestamp).toDate()
+                    : null;
+          } catch (e) {
+            ErrorHandler.logError(e, context: 'Date parsing in initState');
+            // Reset dates on parsing error
+            _selectedDate = null;
+            _startDate = null;
+            _endDate = null;
+          }
+
+          _selectedDays = List<String>.from(data['selectedDays'] ?? []);
+          _notificationsEnabled = data['notificationsEnabled'] ?? false;
+
+          // Handle notification time safely
+          try {
+            if (data['notificationTime'] != null) {
+              final parts = (data['notificationTime'] as String).split(':');
+              if (parts.length == 2) {
+                _notificationTime = TimeOfDay(
+                  hour: int.parse(parts[0]),
+                  minute: int.parse(parts[1]),
+                );
+              }
             }
-          });
+          } catch (e) {
+            ErrorHandler.logError(e, context: 'Notification time parsing');
+            _notificationTime = null;
+          }
+        });
+      }
+    } on FirebaseException catch (e) {
+      ErrorHandler.logError(e, context: 'LoadExistingHabit - Firebase');
+      if (mounted) {
+        ErrorHandler.showErrorDialog(
+          context,
+          title: 'Loading Error',
+          message: ErrorHandler.handleFirestoreError(e),
+          onRetry: _loadExistingHabit,
+          onCancel: () => context.go('/home'),
+        );
+      }
+    } catch (e) {
+      ErrorHandler.logError(e, context: 'LoadExistingHabit - General');
+      if (mounted) {
+        ErrorHandler.showErrorDialog(
+          context,
+          title: 'Loading Failed',
+          message:
+              'Failed to load habit data: ${ErrorHandler.handleGeneralError(e)}',
+          onRetry: _loadExistingHabit,
+          onCancel: () => context.go('/home'),
+        );
+      }
     }
   }
 
   void _saveHabit() async {
     if (_isSaving) return;
-    setState(() => _isSaving = true);
-
-    final title = _titleController.text.trim();
-    final description = _descriptionController.text.trim();
-    final category = _categoryController.text.trim();
-    final targetValue = _targetValueController.text.trim();
-    final targetUnit = _targetUnitController.text.trim();
-
-    // UPDATED VALIDATION - Only title and target value are required
-    if (title.isEmpty) {
-      _showSnackBar('Please enter a habit title');
-      setState(() => _isSaving = false);
-      return;
-    }
-
-    if (targetValue.isEmpty) {
-      _showSnackBar('Please enter a target value');
-      setState(() => _isSaving = false);
-      return;
-    }
-
-    // Validate repeat type specific requirements
-    if (_repeatType == 'Weekly' && _selectedDays.isEmpty) {
-      _showSnackBar('Please select at least one day for weekly habits');
-      setState(() => _isSaving = false);
-      return;
-    }
-
-    if (_repeatType == 'Repeat Till Done' && _selectedDate == null) {
-      _showSnackBar(
-        'Please select a target date for "Repeat Till Done" habits',
-      );
-      setState(() => _isSaving = false);
-      return;
-    }
-
-    if ((_repeatType == 'Weekly' || _repeatType == 'Weekly Flexible') &&
-        (_startDate == null || _endDate == null)) {
-      _showSnackBar('Please select both start and end dates for weekly habits');
-      setState(() => _isSaving = false);
-      return;
-    }
-
-    if ((_repeatType == 'Weekly' || _repeatType == 'Weekly Flexible') &&
-        _endDate!.isBefore(_startDate!)) {
-      _showSnackBar('End date must be after start date');
-      setState(() => _isSaving = false);
-      return;
-    }
-
-    if (_repeatType == 'Weekly Flexible') {
-      final daysPerWeek = int.tryParse(_daysPerWeekController.text) ?? 0;
-      if (daysPerWeek < 1 || daysPerWeek > 7) {
-        _showSnackBar('Days per week must be between 1 and 7');
-        setState(() => _isSaving = false);
-        return;
-      }
-    }
 
     try {
+      setState(() => _isSaving = true);
+
+      final title = _titleController.text.trim();
+      final description = _descriptionController.text.trim();
+      final category = _categoryController.text.trim();
+      final targetValue = _targetValueController.text.trim();
+      final targetUnit = _targetUnitController.text.trim();
+
+      final titleValidation = Validation.validateRequired(title, 'Title');
+      if (titleValidation != null) {
+        ErrorHandler.showErrorSnackbar('Validation Error', titleValidation);
+        return;
+      }
+
+      final targetValidation = Validation.validateRequired(
+        targetValue,
+        'Target value',
+      );
+      if (targetValidation != null) {
+        ErrorHandler.showErrorSnackbar('Validation Error', targetValidation);
+        return;
+      }
+
+      final parsedTargetValue = double.tryParse(targetValue);
+      if (parsedTargetValue == null || parsedTargetValue <= 0) {
+        ErrorHandler.showErrorSnackbar(
+          'Validation Error',
+          'Target value must be a positive number',
+        );
+        return;
+      }
+
+      // Validate repeat type specific requirements
+      if (_repeatType == 'Weekly' && _selectedDays.isEmpty) {
+        ErrorHandler.showErrorSnackbar(
+          'Validation Error',
+          'Please select at least one day for weekly habits',
+        );
+        return;
+      }
+
+      if (_repeatType == 'Repeat Till Done' && _selectedDate == null) {
+        ErrorHandler.showErrorSnackbar(
+          'Validation Error',
+          'Please select a target date for "Repeat Till Done" habits',
+        );
+        return;
+      }
+
+      if ((_repeatType == 'Weekly' || _repeatType == 'Weekly Flexible') &&
+          (_startDate == null || _endDate == null)) {
+        ErrorHandler.showErrorSnackbar(
+          'Validation Error',
+          'Please select both start and end dates for weekly habits',
+        );
+        return;
+      }
+
+      if ((_repeatType == 'Weekly' || _repeatType == 'Weekly Flexible') &&
+          _endDate!.isBefore(_startDate!)) {
+        ErrorHandler.showErrorSnackbar(
+          'Validation Error',
+          'End date must be after start date',
+        );
+        return;
+      }
+
+      if (_repeatType == 'Weekly Flexible') {
+        final daysPerWeek = int.tryParse(_daysPerWeekController.text) ?? 0;
+        if (daysPerWeek < 1 || daysPerWeek > 7) {
+          ErrorHandler.showErrorSnackbar(
+            'Validation Error',
+            'Days per week must be between 1 and 7',
+          );
+          return;
+        }
+      }
+
+      // Check authentication
+      if (currentUser == null) {
+        ErrorHandler.showErrorSnackbar(
+          'Authentication Error',
+          'Please sign in to continue',
+        );
+        context.go('/signin');
+        return;
+      }
+
+      // Show loading dialog for long operations
+      if (mounted) {
+        ErrorHandler.showLoadingDialog(
+          context,
+          message:
+              widget.habitId == null
+                  ? 'Creating habit...'
+                  : 'Updating habit...',
+        );
+      }
+
       final habitData = {
         'title': title,
-        'description':
-            description.isEmpty ? null : description, // Allow empty description
-        'category': category.isEmpty ? null : category, // Allow empty category
+        'description': description.isEmpty ? null : description,
+        'category': category.isEmpty ? null : category,
         'priority': _priority,
         'repeatType': _repeatType,
-        'targetValue': double.tryParse(targetValue),
-        'targetUnit':
-            targetUnit.isEmpty ? 'times' : targetUnit, // Default unit if empty
+        'targetValue': parsedTargetValue,
+        'targetUnit': targetUnit.isEmpty ? 'times' : targetUnit,
         'uid': currentUser?.uid,
         'dailyCompletion': {},
-        'isCompleted': false, // For "Repeat Till Done" habits
+        'isCompleted': false,
         'notificationsEnabled': _notificationsEnabled,
         'notificationTime':
             _notificationTime != null
@@ -226,7 +329,7 @@ class _AddEditScreenState extends State<AddEditScreen> {
         habitData['selectedDate'] = null;
         habitData['daysPerWeek'] = null;
       } else if (_repeatType == 'Weekly Flexible') {
-        habitData['selectedDays'] = []; // No specific days
+        habitData['selectedDays'] = [];
         habitData['startDate'] = Timestamp.fromDate(_startDate!);
         habitData['endDate'] = Timestamp.fromDate(_endDate!);
         habitData['selectedDate'] = null;
@@ -234,31 +337,86 @@ class _AddEditScreenState extends State<AddEditScreen> {
             int.tryParse(_daysPerWeekController.text) ?? 3;
       }
 
+      // Perform Firestore operation
       if (widget.habitId == null) {
         habitData['createdAt'] = Timestamp.now();
         await FirebaseFirestore.instance.collection('habits').add(habitData);
-        _showSnackBar('Habit created successfully');
+        ErrorHandler.showSuccessSnackbar(
+          'Success',
+          'Habit created successfully',
+        );
+        ErrorHandler.logError(
+          'Habit created successfully',
+          context: 'CreateHabit',
+        );
       } else {
         habitData['updatedAt'] = Timestamp.now();
         await FirebaseFirestore.instance
             .collection('habits')
             .doc(widget.habitId)
             .update(habitData);
-        _showSnackBar('Habit updated successfully');
+        ErrorHandler.showSuccessSnackbar(
+          'Success',
+          'Habit updated successfully',
+        );
+        ErrorHandler.logError(
+          'Habit updated successfully',
+          context: 'UpdateHabit',
+        );
       }
 
-      if (context.mounted) context.go('/home');
+      // Hide loading dialog and navigate
+      if (mounted) {
+        ErrorHandler.hideLoadingDialog(context);
+        context.go('/home');
+      }
+    } on FirebaseException catch (e) {
+      ErrorHandler.logError(e, context: 'SaveHabit - Firebase');
+      if (mounted) {
+        ErrorHandler.hideLoadingDialog(context);
+        ErrorHandler.showErrorDialog(
+          context,
+          title: 'Database Error',
+          message: ErrorHandler.handleFirestoreError(e),
+          onRetry: _saveHabit,
+        );
+      }
     } catch (e) {
-      _showSnackBar('Error: $e');
+      ErrorHandler.logError(e, context: 'SaveHabit - General');
+      if (mounted) {
+        ErrorHandler.hideLoadingDialog(context);
+        ErrorHandler.showErrorDialog(
+          context,
+          title: 'Save Failed',
+          message: ErrorHandler.handleGeneralError(e),
+          onRetry: _saveHabit,
+        );
+      }
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+  void _showSnackBar(String message, {bool isError = false}) {
+    try {
+      if (!mounted) return;
+
+      if (isError) {
+        ErrorHandler.showErrorSnackbar('Error', message);
+      } else {
+        ErrorHandler.showSuccessSnackbar('Success', message);
+      }
+    } catch (e) {
+      ErrorHandler.logError(e, context: 'ShowSnackBar');
+      // Fallback to basic snackbar if ErrorHandler fails
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
+    }
   }
 
   Widget _buildCategoryField() {
@@ -771,68 +929,148 @@ class _AddEditScreenState extends State<AddEditScreen> {
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           // Save/Update Button
+          // Replace your save FloatingActionButton with:
           FloatingActionButton.extended(
             onPressed: _isSaving ? null : _saveHabit,
-            heroTag: "save_button", // Unique hero tag
+            heroTag: "save_button",
             icon:
                 _isSaving
-                    ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
+                    ? LoadingWidget.button(color: Colors.white, size: 20)
                     : const Icon(Icons.save),
             label: Text(
               _isSaving
                   ? (isEditing ? 'Updating...' : 'Saving...')
                   : (isEditing ? 'Update Habit' : 'Save Habit'),
             ),
-            backgroundColor: Theme.of(context).primaryColor,
+            backgroundColor:
+                _isSaving ? Colors.grey : Theme.of(context).primaryColor,
             foregroundColor: Colors.white,
           ),
-
           // Delete Button (for editing only)
           if (isEditing) ...[
             const SizedBox(height: 12),
             FloatingActionButton.extended(
+              // Replace the delete button onPressed in your FloatingActionButton with:
               onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder:
-                      (context) => AlertDialog(
-                        title: const Text('Delete Habit'),
-                        content: const Text(
-                          'Are you sure you want to delete this habit? This action cannot be undone.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
+                try {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder:
+                        (context) => AlertDialog(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          ElevatedButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
+                          title: Row(
+                            children: [
+                              const Icon(Icons.warning, color: Colors.orange),
+                              const SizedBox(width: 8),
+                              const Text('Delete Habit'),
+                            ],
+                          ),
+                          content: const Text(
+                            'Are you sure you want to delete this habit? This action cannot be undone and all progress data will be lost.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel'),
                             ),
-                            child: const Text('Delete'),
-                          ),
-                        ],
-                      ),
-                );
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Delete'),
+                            ),
+                          ],
+                        ),
+                  );
 
-                if (confirm == true) {
-                  await FirebaseFirestore.instance
-                      .collection('habits')
-                      .doc(widget.habitId)
-                      .delete();
+                  if (confirm == true && mounted) {
+                    // Show loading dialog
+                    ErrorHandler.showLoadingDialog(
+                      context,
+                      message: 'Deleting habit...',
+                    );
 
-                  if (context.mounted) {
-                    _showSnackBar('Habit deleted successfully');
-                    context.go('/home');
+                    try {
+                      await FirebaseFirestore.instance
+                          .collection('habits')
+                          .doc(widget.habitId)
+                          .delete();
+
+                      if (mounted) {
+                        ErrorHandler.hideLoadingDialog(context);
+                        ErrorHandler.showSuccessSnackbar(
+                          'Success',
+                          'Habit deleted successfully',
+                        );
+                        context.go('/home');
+                      }
+                    } on FirebaseException catch (e) {
+                      ErrorHandler.logError(
+                        e,
+                        context: 'DeleteHabit - Firebase',
+                      );
+                      if (mounted) {
+                        ErrorHandler.hideLoadingDialog(context);
+                        ErrorHandler.showErrorDialog(
+                          context,
+                          title: 'Delete Failed',
+                          message: ErrorHandler.handleFirestoreError(e),
+                          onRetry: () async {
+                            // Retry delete operation
+                            try {
+                              ErrorHandler.showLoadingDialog(
+                                context,
+                                message: 'Retrying delete...',
+                              );
+                              await FirebaseFirestore.instance
+                                  .collection('habits')
+                                  .doc(widget.habitId)
+                                  .delete();
+                              if (mounted) {
+                                ErrorHandler.hideLoadingDialog(context);
+                                ErrorHandler.showSuccessSnackbar(
+                                  'Success',
+                                  'Habit deleted successfully',
+                                );
+                                context.go('/home');
+                              }
+                            } catch (retryError) {
+                              if (mounted) {
+                                ErrorHandler.hideLoadingDialog(context);
+                                ErrorHandler.showErrorSnackbar(
+                                  'Error',
+                                  'Failed to delete habit',
+                                );
+                              }
+                            }
+                          },
+                        );
+                      }
+                    } catch (e) {
+                      ErrorHandler.logError(
+                        e,
+                        context: 'DeleteHabit - General',
+                      );
+                      if (mounted) {
+                        ErrorHandler.hideLoadingDialog(context);
+                        ErrorHandler.showErrorDialog(
+                          context,
+                          title: 'Delete Failed',
+                          message: ErrorHandler.handleGeneralError(e),
+                        );
+                      }
+                    }
                   }
+                } catch (e) {
+                  ErrorHandler.logError(e, context: 'DeleteHabit - Dialog');
+                  ErrorHandler.showErrorSnackbar(
+                    'Error',
+                    'Failed to show delete confirmation',
+                  );
                 }
               },
               heroTag: "delete_button", // Unique hero tag

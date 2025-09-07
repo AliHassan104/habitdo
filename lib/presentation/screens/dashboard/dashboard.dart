@@ -5,6 +5,9 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+// Add these imports
+import 'package:habitdo/core/utils/error_handler.dart';
+import 'package:habitdo/core/utils/loading_widget.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -89,89 +92,115 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return {"start": start, "end": end};
   }
 
+  // Replace your navigation methods with these error-handled versions:
+
   /// Navigate to previous period
   void _navigateToPreviousPeriod() {
-    setState(() {
-      switch (_selectedPeriod) {
-        case "Week":
-          _anchorDate = _anchorDate.subtract(const Duration(days: 7));
-          break;
-        case "Month":
-          _anchorDate = DateTime(
-            _anchorDate.year,
-            _anchorDate.month - 1,
-            _anchorDate.day,
-          );
-          break;
-        case "Quarter":
-          _anchorDate = DateTime(
-            _anchorDate.year,
-            _anchorDate.month - 3,
-            _anchorDate.day,
-          );
-          break;
-        case "Half Year":
-          _anchorDate = DateTime(
-            _anchorDate.year,
-            _anchorDate.month - 6,
-            _anchorDate.day,
-          );
-          break;
-        case "Year":
-          _anchorDate = DateTime(
-            _anchorDate.year - 1,
-            _anchorDate.month,
-            _anchorDate.day,
-          );
-          break;
-      }
-    });
+    try {
+      setState(() {
+        switch (_selectedPeriod) {
+          case "Week":
+            _anchorDate = _anchorDate.subtract(const Duration(days: 7));
+            break;
+          case "Month":
+            _anchorDate = DateTime(
+              _anchorDate.year,
+              _anchorDate.month - 1,
+              _anchorDate.day,
+            );
+            break;
+          case "Quarter":
+            _anchorDate = DateTime(
+              _anchorDate.year,
+              _anchorDate.month - 3,
+              _anchorDate.day,
+            );
+            break;
+          case "Half Year":
+            _anchorDate = DateTime(
+              _anchorDate.year,
+              _anchorDate.month - 6,
+              _anchorDate.day,
+            );
+            break;
+          case "Year":
+            _anchorDate = DateTime(
+              _anchorDate.year - 1,
+              _anchorDate.month,
+              _anchorDate.day,
+            );
+            break;
+        }
+      });
+    } catch (e) {
+      ErrorHandler.logError(e, context: 'NavigateToPreviousPeriod');
+      ErrorHandler.showErrorSnackbar(
+        'Navigation Error',
+        'Failed to navigate to previous period',
+      );
+    }
   }
 
   /// Navigate to next period
   void _navigateToNextPeriod() {
-    setState(() {
-      switch (_selectedPeriod) {
-        case "Week":
-          _anchorDate = _anchorDate.add(const Duration(days: 7));
-          break;
-        case "Month":
-          _anchorDate = DateTime(
-            _anchorDate.year,
-            _anchorDate.month + 1,
-            _anchorDate.day,
-          );
-          break;
-        case "Quarter":
-          _anchorDate = DateTime(
-            _anchorDate.year,
-            _anchorDate.month + 3,
-            _anchorDate.day,
-          );
-          break;
-        case "Half Year":
-          _anchorDate = DateTime(
-            _anchorDate.year,
-            _anchorDate.month + 6,
-            _anchorDate.day,
-          );
-          break;
-        case "Year":
-          _anchorDate = DateTime(
-            _anchorDate.year + 1,
-            _anchorDate.month,
-            _anchorDate.day,
-          );
-          break;
-      }
-    });
+    try {
+      setState(() {
+        switch (_selectedPeriod) {
+          case "Week":
+            _anchorDate = _anchorDate.add(const Duration(days: 7));
+            break;
+          case "Month":
+            _anchorDate = DateTime(
+              _anchorDate.year,
+              _anchorDate.month + 1,
+              _anchorDate.day,
+            );
+            break;
+          case "Quarter":
+            _anchorDate = DateTime(
+              _anchorDate.year,
+              _anchorDate.month + 3,
+              _anchorDate.day,
+            );
+            break;
+          case "Half Year":
+            _anchorDate = DateTime(
+              _anchorDate.year,
+              _anchorDate.month + 6,
+              _anchorDate.day,
+            );
+            break;
+          case "Year":
+            _anchorDate = DateTime(
+              _anchorDate.year + 1,
+              _anchorDate.month,
+              _anchorDate.day,
+            );
+            break;
+        }
+      });
+    } catch (e) {
+      ErrorHandler.logError(e, context: 'NavigateToNextPeriod');
+      ErrorHandler.showErrorSnackbar(
+        'Navigation Error',
+        'Failed to navigate to next period',
+      );
+    }
   }
 
   /// Reset to current period
   void _resetToCurrentPeriod() {
-    setState(() {
-      _anchorDate = DateTime.now();
-    });
+    try {
+      setState(() {
+        _anchorDate = DateTime.now();
+      });
+    } catch (e) {
+      ErrorHandler.logError(e, context: 'ResetToCurrentPeriod');
+      ErrorHandler.showErrorSnackbar(
+        'Navigation Error',
+        'Failed to reset to current period',
+      );
+    }
   }
 
   /// Check if we're viewing current period
@@ -187,42 +216,77 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Helper method to check if a habit is active on a specific date
   bool _isHabitActiveOnDate(Map<String, dynamic> data, DateTime date) {
-    final repeatType = data['repeatType'];
-    final selectedDays = List<String>.from(data['selectedDays'] ?? []);
-    final selectedDate = (data['selectedDate'] as Timestamp?)?.toDate();
-    final startDate = (data['startDate'] as Timestamp?)?.toDate();
-    final endDate = (data['endDate'] as Timestamp?)?.toDate();
-    final weekday = DateFormat.E().format(date).substring(0, 3);
+    try {
+      final repeatType = data['repeatType'];
+      if (repeatType == null) return false;
 
-    switch (repeatType) {
-      case 'Repeat Till Done':
-        if (selectedDate != null &&
-            selectedDate.year == date.year &&
-            selectedDate.month == date.month &&
-            selectedDate.day == date.day) {
-          return true;
-        }
-        break;
-      case 'Weekly':
-        if (startDate != null &&
-            endDate != null &&
-            selectedDays.contains(weekday) &&
-            date.isAfter(startDate.subtract(const Duration(days: 1))) &&
-            date.isBefore(endDate.add(const Duration(days: 1)))) {
-          return true;
-        }
-        break;
-      case 'Weekly Flexible':
-        // For flexible weekly habits, any day within the date range is active
-        if (startDate != null &&
-            endDate != null &&
-            date.isAfter(startDate.subtract(const Duration(days: 1))) &&
-            date.isBefore(endDate.add(const Duration(days: 1)))) {
-          return true;
-        }
-        break;
+      final selectedDays = List<String>.from(data['selectedDays'] ?? []);
+      final weekday = DateFormat.E().format(date).substring(0, 3);
+
+      switch (repeatType) {
+        case 'Repeat Till Done':
+          try {
+            final selectedDate = (data['selectedDate'] as Timestamp?)?.toDate();
+            if (selectedDate != null &&
+                selectedDate.year == date.year &&
+                selectedDate.month == date.month &&
+                selectedDate.day == date.day) {
+              return true;
+            }
+          } catch (e) {
+            ErrorHandler.logError(e, context: 'RepeatTillDone date check');
+            return false;
+          }
+          break;
+
+        case 'Weekly':
+          try {
+            final startDate = (data['startDate'] as Timestamp?)?.toDate();
+            final endDate = (data['endDate'] as Timestamp?)?.toDate();
+
+            if (startDate != null &&
+                endDate != null &&
+                selectedDays.contains(weekday) &&
+                date.isAfter(startDate.subtract(const Duration(days: 1))) &&
+                date.isBefore(endDate.add(const Duration(days: 1)))) {
+              return true;
+            }
+          } catch (e) {
+            ErrorHandler.logError(e, context: 'Weekly date check');
+            return false;
+          }
+          break;
+
+        case 'Weekly Flexible':
+          try {
+            final startDate = (data['startDate'] as Timestamp?)?.toDate();
+            final endDate = (data['endDate'] as Timestamp?)?.toDate();
+
+            if (startDate != null &&
+                endDate != null &&
+                date.isAfter(startDate.subtract(const Duration(days: 1))) &&
+                date.isBefore(endDate.add(const Duration(days: 1)))) {
+              return true;
+            }
+          } catch (e) {
+            ErrorHandler.logError(e, context: 'WeeklyFlexible date check');
+            return false;
+          }
+          break;
+
+        default:
+          ErrorHandler.logError(
+            'Unknown repeat type: $repeatType',
+            context: 'IsHabitActiveOnDate',
+          );
+          return false;
+      }
+
+      return false;
+    } catch (e) {
+      ErrorHandler.logError(e, context: 'IsHabitActiveOnDate - General');
+      return false; // Return false instead of crashing
     }
-    return false;
   }
 
   /// Helper method to calculate weekly flexible completion
@@ -231,76 +295,116 @@ class _DashboardScreenState extends State<DashboardScreen> {
     DateTime start,
     DateTime end,
   ) {
-    final completionMap = Map<String, dynamic>.from(
-      data['dailyCompletion'] ?? {},
-    );
-    final daysPerWeek = (data['daysPerWeek'] as num?)?.toInt() ?? 3;
-    final targetValue = (data['targetValue'] as num?)?.toDouble() ?? 1.0;
+    try {
+      final completionMap = Map<String, dynamic>.from(
+        data['dailyCompletion'] ?? {},
+      );
+      final daysPerWeek = (data['daysPerWeek'] as num?)?.toInt() ?? 3;
+      final targetValue = (data['targetValue'] as num?)?.toDouble() ?? 1.0;
 
-    // Group days by week and calculate completion
-    Map<String, List<DateTime>> weeklyDates = {};
-    int totalCompletedDays = 0;
-    int totalPossibleDays = 0;
-    double totalAchievedValue = 0;
-    double totalTargetValue = 0;
+      // Group days by week and calculate completion
+      Map<String, List<DateTime>> weeklyDates = {};
+      int totalCompletedDays = 0;
+      int totalPossibleDays = 0;
+      double totalAchievedValue = 0;
+      double totalTargetValue = 0;
 
-    for (
-      DateTime date = start;
-      !date.isAfter(end);
-      date = date.add(const Duration(days: 1))
-    ) {
-      if (_isHabitActiveOnDate(data, date)) {
-        // Get the Monday of this week as the key
-        final weekStart = date.subtract(Duration(days: date.weekday - 1));
-        final weekKey = DateFormat('yyyy-MM-dd').format(weekStart);
+      try {
+        for (
+          DateTime date = start;
+          !date.isAfter(end);
+          date = date.add(const Duration(days: 1))
+        ) {
+          if (_isHabitActiveOnDate(data, date)) {
+            // Get the Monday of this week as the key
+            final weekStart = date.subtract(Duration(days: date.weekday - 1));
+            final weekKey = DateFormat('yyyy-MM-dd').format(weekStart);
 
-        weeklyDates.putIfAbsent(weekKey, () => []);
-        weeklyDates[weekKey]!.add(date);
+            weeklyDates.putIfAbsent(weekKey, () => []);
+            weeklyDates[weekKey]!.add(date);
+          }
+        }
+      } catch (e) {
+        ErrorHandler.logError(e, context: 'WeeklyFlexible - Date iteration');
+        throw Exception('Failed to process weekly dates: ${e.toString()}');
       }
-    }
 
-    // For each week, check how many days were completed vs target
-    weeklyDates.forEach((weekKey, datesInWeek) {
-      int completedInWeek = 0;
-      int targetForWeek = daysPerWeek.clamp(0, datesInWeek.length);
-      totalPossibleDays += targetForWeek;
+      // For each week, check how many days were completed vs target
+      weeklyDates.forEach((weekKey, datesInWeek) {
+        try {
+          int completedInWeek = 0;
+          int targetForWeek = daysPerWeek.clamp(0, datesInWeek.length);
+          totalPossibleDays += targetForWeek;
 
-      for (DateTime date in datesInWeek) {
-        final dateString = DateFormat('yyyy-MM-dd').format(date);
-        final entry = completionMap[dateString];
-        totalTargetValue += targetValue;
+          for (DateTime date in datesInWeek) {
+            try {
+              final dateString = DateFormat('yyyy-MM-dd').format(date);
+              final entry = completionMap[dateString];
+              totalTargetValue += targetValue;
 
-        if (entry != null) {
-          bool dayCompleted = false;
-          if (entry is bool && entry) {
-            dayCompleted = true;
-          } else if (entry is Map<String, dynamic>) {
-            final achievedValue = (entry['value'] as num?)?.toDouble() ?? 0.0;
-            totalAchievedValue += achievedValue;
-            if (achievedValue >= targetValue) {
-              dayCompleted = true;
+              if (entry != null) {
+                bool dayCompleted = false;
+                if (entry is bool && entry) {
+                  dayCompleted = true;
+                } else if (entry is Map<String, dynamic>) {
+                  final achievedValue =
+                      (entry['value'] as num?)?.toDouble() ?? 0.0;
+                  totalAchievedValue += achievedValue;
+                  if (achievedValue >= targetValue) {
+                    dayCompleted = true;
+                  }
+                }
+
+                if (dayCompleted && completedInWeek < targetForWeek) {
+                  completedInWeek++;
+                }
+              }
+            } catch (e) {
+              ErrorHandler.logError(
+                e,
+                context: 'WeeklyFlexible - Processing date $date',
+              );
+              // Continue with next date instead of failing
+              continue;
             }
           }
 
-          if (dayCompleted && completedInWeek < targetForWeek) {
-            completedInWeek++;
-          }
+          totalCompletedDays += completedInWeek;
+        } catch (e) {
+          ErrorHandler.logError(
+            e,
+            context: 'WeeklyFlexible - Processing week $weekKey',
+          );
+          // Continue with next week instead of failing
         }
-      }
+      });
 
-      totalCompletedDays += completedInWeek;
-    });
-
-    return {
-      'completedDays': totalCompletedDays,
-      'totalDays': totalPossibleDays,
-      'totalAchievedValue': totalAchievedValue,
-      'totalTargetValue': totalTargetValue,
-    };
+      return {
+        'completedDays': totalCompletedDays,
+        'totalDays': totalPossibleDays,
+        'totalAchievedValue': totalAchievedValue,
+        'totalTargetValue': totalTargetValue,
+      };
+    } catch (e) {
+      ErrorHandler.logError(e, context: 'CalculateWeeklyFlexibleProgress');
+      // Return safe default values instead of crashing
+      return {
+        'completedDays': 0,
+        'totalDays': 0,
+        'totalAchievedValue': 0.0,
+        'totalTargetValue': 0.0,
+      };
+    }
   }
 
   Future<List<Map<String, dynamic>>> _fetchHabitData() async {
-    if (currentUser == null) return [];
+    if (currentUser == null) {
+      ErrorHandler.showErrorSnackbar(
+        'Authentication Error',
+        'Please sign in to view dashboard',
+      );
+      return [];
+    }
 
     setState(() {
       _isLoading = true;
@@ -312,101 +416,174 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final start = range["start"]!;
       final end = range["end"]!;
 
-      final snapshot =
-          await FirebaseFirestore.instance
-              .collection('habits')
-              .where('uid', isEqualTo: currentUser?.uid)
-              .get();
+      final snapshot = await FirebaseFirestore.instance
+          .collection('habits')
+          .where('uid', isEqualTo: currentUser?.uid)
+          .get()
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception(
+                'Request timed out. Please check your internet connection.',
+              );
+            },
+          );
 
       final List<Map<String, dynamic>> habitSummaries = [];
 
       for (var doc in snapshot.docs) {
-        final data = doc.data();
-        if (data['dailyCompletion'] == null || data['title'] == null) continue;
+        try {
+          final data = doc.data();
+          if (data['dailyCompletion'] == null || data['title'] == null) {
+            ErrorHandler.logError(
+              'Skipping habit with missing data: ${doc.id}',
+              context: 'FetchHabitData',
+            );
+            continue;
+          }
 
-        final completionMap = Map<String, dynamic>.from(
-          data['dailyCompletion'],
-        );
-        final repeatType = data['repeatType'];
-
-        int completedDays = 0;
-        int totalDays = 0;
-        double totalAchievedValue = 0;
-        double totalTargetValue = 0;
-
-        if (repeatType == 'Weekly Flexible') {
-          // Use special calculation for weekly flexible habits
-          final flexibleProgress = _calculateWeeklyFlexibleProgress(
-            data,
-            start,
-            end,
+          final completionMap = Map<String, dynamic>.from(
+            data['dailyCompletion'],
           );
-          completedDays = flexibleProgress['completedDays'];
-          totalDays = flexibleProgress['totalDays'];
-          totalAchievedValue = flexibleProgress['totalAchievedValue'];
-          totalTargetValue = flexibleProgress['totalTargetValue'];
-        } else {
-          // Standard calculation for other habit types
-          final selectedDays = List<String>.from(data['selectedDays'] ?? []);
-          final selectedDate = (data['selectedDate'] as Timestamp?)?.toDate();
-          final targetValue = (data['targetValue'] as num?)?.toDouble() ?? 0.0;
+          final repeatType = data['repeatType'];
 
-          for (
-            DateTime date = start;
-            !date.isAfter(end);
-            date = date.add(const Duration(days: 1))
-          ) {
-            if (_isHabitActiveOnDate(data, date)) {
-              totalDays++;
-              final dateString = DateFormat('yyyy-MM-dd').format(date);
-              final entry = completionMap[dateString];
+          int completedDays = 0;
+          int totalDays = 0;
+          double totalAchievedValue = 0;
+          double totalTargetValue = 0;
 
-              if (entry != null) {
-                if (entry is bool && entry) {
-                  completedDays++;
-                } else if (entry is Map<String, dynamic>) {
-                  final achievedValue =
-                      (entry['value'] as num?)?.toDouble() ?? 0.0;
-                  totalAchievedValue += achievedValue;
-                  totalTargetValue += targetValue;
+          if (repeatType == 'Weekly Flexible') {
+            // Use special calculation for weekly flexible habits
+            try {
+              final flexibleProgress = _calculateWeeklyFlexibleProgress(
+                data,
+                start,
+                end,
+              );
+              completedDays = flexibleProgress['completedDays'];
+              totalDays = flexibleProgress['totalDays'];
+              totalAchievedValue = flexibleProgress['totalAchievedValue'];
+              totalTargetValue = flexibleProgress['totalTargetValue'];
+            } catch (e) {
+              ErrorHandler.logError(
+                e,
+                context: 'Weekly flexible calculation for ${doc.id}',
+              );
+              // Skip this habit if calculation fails
+              continue;
+            }
+          } else {
+            // Standard calculation for other habit types
+            try {
+              final targetValue =
+                  (data['targetValue'] as num?)?.toDouble() ?? 0.0;
 
-                  if (targetValue > 0 && achievedValue >= targetValue) {
-                    completedDays++;
+              for (
+                DateTime date = start;
+                !date.isAfter(end);
+                date = date.add(const Duration(days: 1))
+              ) {
+                if (_isHabitActiveOnDate(data, date)) {
+                  totalDays++;
+                  final dateString = DateFormat('yyyy-MM-dd').format(date);
+                  final entry = completionMap[dateString];
+
+                  if (entry != null) {
+                    try {
+                      if (entry is bool && entry) {
+                        completedDays++;
+                      } else if (entry is Map<String, dynamic>) {
+                        final achievedValue =
+                            (entry['value'] as num?)?.toDouble() ?? 0.0;
+                        totalAchievedValue += achievedValue;
+                        totalTargetValue += targetValue;
+
+                        if (targetValue > 0 && achievedValue >= targetValue) {
+                          completedDays++;
+                        }
+                      }
+                    } catch (e) {
+                      ErrorHandler.logError(
+                        e,
+                        context:
+                            'Processing entry for date $dateString in habit ${doc.id}',
+                      );
+                    }
+                  } else {
+                    totalTargetValue += targetValue;
                   }
                 }
-              } else {
-                totalTargetValue += targetValue;
               }
+            } catch (e) {
+              ErrorHandler.logError(
+                e,
+                context: 'Standard calculation for habit ${doc.id}',
+              );
+              // Skip this habit if calculation fails
+              continue;
             }
           }
-        }
 
-        if (totalDays > 0) {
-          habitSummaries.add({
-            'id': doc.id,
-            'title': data['title'],
-            'repeatType': repeatType,
-            'completedDays': completedDays,
-            'totalDays': totalDays,
-            'completionPercent': (completedDays / totalDays * 100).clamp(
-              0,
-              100,
-            ),
-            'targetValue': data['targetValue'],
-            'targetUnit': data['targetUnit'] ?? 'times',
-            'totalAchievedValue': totalAchievedValue,
-            'totalTargetValue': totalTargetValue,
-            'daysPerWeek': data['daysPerWeek'], // For weekly flexible display
-          });
+          if (totalDays > 0) {
+            try {
+              habitSummaries.add({
+                'id': doc.id,
+                'title': data['title'],
+                'repeatType': repeatType,
+                'completedDays': completedDays,
+                'totalDays': totalDays,
+                'completionPercent': (completedDays / totalDays * 100).clamp(
+                  0,
+                  100,
+                ),
+                'targetValue': data['targetValue'],
+                'targetUnit': data['targetUnit'] ?? 'times',
+                'totalAchievedValue': totalAchievedValue,
+                'totalTargetValue': totalTargetValue,
+                'daysPerWeek': data['daysPerWeek'],
+              });
+            } catch (e) {
+              ErrorHandler.logError(
+                e,
+                context: 'Creating summary for habit ${doc.id}',
+              );
+            }
+          }
+        } catch (e) {
+          ErrorHandler.logError(
+            e,
+            context: 'Processing habit document ${doc.id}',
+          );
+          // Continue with next habit instead of failing completely
+          continue;
         }
       }
 
-      habitSummaries.sort(
-        (a, b) => b['completionPercent'].compareTo(a['completionPercent']),
-      );
+      try {
+        habitSummaries.sort(
+          (a, b) => b['completionPercent'].compareTo(a['completionPercent']),
+        );
+      } catch (e) {
+        ErrorHandler.logError(e, context: 'Sorting habit summaries');
+        // Don't fail if sorting fails
+      }
+
       return habitSummaries;
+    } on FirebaseException catch (e) {
+      ErrorHandler.logError(e, context: 'FetchHabitData - Firebase');
+      setState(() => _errorMessage = ErrorHandler.handleFirestoreError(e));
+      ErrorHandler.showErrorSnackbar(
+        'Database Error',
+        ErrorHandler.handleFirestoreError(e),
+      );
+      return [];
     } catch (e) {
-      setState(() => _errorMessage = 'Failed to load data: ${e.toString()}');
+      ErrorHandler.logError(e, context: 'FetchHabitData - General');
+      setState(() => _errorMessage = ErrorHandler.handleGeneralError(e));
+      ErrorHandler.showErrorSnackbar(
+        'Loading Error',
+        ErrorHandler.handleGeneralError(e),
+      );
       return [];
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -424,34 +601,131 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _buildPeriodSelector(),
           if (_isLoading) const LinearProgressIndicator(),
           if (_errorMessage != null) _buildErrorWidget(),
+          // Replace your existing FutureBuilder in the Expanded widget with:
           Expanded(
             child: RefreshIndicator(
-              onRefresh: _fetchHabitData,
+              onRefresh: () async {
+                try {
+                  setState(() {
+                    _errorMessage = null;
+                  });
+                  await _fetchHabitData();
+                } catch (e) {
+                  ErrorHandler.logError(e, context: 'Dashboard refresh');
+                  ErrorHandler.showErrorSnackbar(
+                    'Refresh Error',
+                    ErrorHandler.handleGeneralError(e),
+                  );
+                }
+              },
               child: FutureBuilder<List<Map<String, dynamic>>>(
                 future: _fetchHabitData(),
                 builder: (context, snapshot) {
+                  // Handle loading state
                   if (snapshot.connectionState == ConnectionState.waiting &&
                       !_isLoading) {
-                    return const Center(child: CircularProgressIndicator());
+                    return LoadingWidget.overlay(
+                      isLoading: true,
+                      loadingText: 'Loading dashboard data...',
+                      child: Column(
+                        children: [
+                          HabitLoadingWidgets.dashboardStats(),
+                          HabitLoadingWidgets.chart(),
+                          Expanded(child: HabitLoadingWidgets.habitList()),
+                        ],
+                      ),
+                    );
+                  }
+
+                  // Handle errors
+                  if (snapshot.hasError) {
+                    final errorMessage = ErrorHandler.handleGeneralError(
+                      snapshot.error,
+                    );
+                    ErrorHandler.logError(
+                      snapshot.error,
+                      context: 'Dashboard FutureBuilder',
+                    );
+
+                    return LoadingWidget.emptyState(
+                      title: 'Failed to load dashboard',
+                      subtitle: errorMessage,
+                      icon: Icons.error_outline,
+                      onRetry: () {
+                        setState(() {
+                          _errorMessage = null;
+                        });
+                      },
+                      retryText: 'Retry',
+                    );
                   }
 
                   final data = snapshot.data ?? [];
 
+                  // Handle empty data
                   if (data.isEmpty && !_isLoading && _errorMessage == null) {
-                    return _buildEmptyState();
+                    return LoadingWidget.emptyState(
+                      title:
+                          'No habit data for this ${_selectedPeriod.toLowerCase()}',
+                      subtitle: 'Complete some habits to see your analytics',
+                      icon: Icons.analytics_outlined,
+                      onRetry: () => context.go('/home'),
+                      retryText: 'Go to Habits',
+                    );
                   }
 
+                  // Handle error state from _fetchHabitData
+                  if (_errorMessage != null) {
+                    return LoadingWidget.emptyState(
+                      title: 'Dashboard Error',
+                      subtitle: _errorMessage!,
+                      icon: Icons.error_outline,
+                      onRetry: () {
+                        setState(() {
+                          _errorMessage = null;
+                        });
+                      },
+                      retryText: 'Retry',
+                    );
+                  }
+
+                  // Success state - show dashboard content
                   return CustomScrollView(
                     slivers: [
                       SliverToBoxAdapter(child: _buildStatsHeader(data)),
                       SliverToBoxAdapter(child: _buildPieChart(data)),
                       SliverToBoxAdapter(child: _buildHabitListHeader()),
                       SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) => _buildHabitCard(data[index]),
-                          childCount: data.length,
-                        ),
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          try {
+                            return _buildHabitCard(data[index]);
+                          } catch (e) {
+                            ErrorHandler.logError(
+                              e,
+                              context: 'Building habit card at index $index',
+                            );
+                            return Card(
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 4,
+                              ),
+                              child: ListTile(
+                                leading: const Icon(
+                                  Icons.error_outline,
+                                  color: Colors.red,
+                                ),
+                                title: const Text('Error loading habit'),
+                                trailing: TextButton(
+                                  onPressed: () => setState(() {}),
+                                  child: const Text('Retry'),
+                                ),
+                              ),
+                            );
+                          }
+                        }, childCount: data.length),
                       ),
+                      // Add some bottom padding
+                      const SliverToBoxAdapter(child: SizedBox(height: 100)),
                     ],
                   );
                 },
@@ -477,13 +751,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onPressed: () => context.go('/home'),
         tooltip: 'Go to Home',
       ),
+      // Replace your AppBar actions with:
       actions: [
         IconButton(
           icon: const Icon(Icons.refresh, color: Colors.white),
-          onPressed: () {
-            setState(() {
-              _anchorDate = DateTime.now();
-            });
+          onPressed: () async {
+            try {
+              setState(() {
+                _anchorDate = DateTime.now();
+                _errorMessage = null;
+              });
+              ErrorHandler.showInfoSnackbar(
+                'Dashboard',
+                'Refreshing dashboard data...',
+              );
+            } catch (e) {
+              ErrorHandler.logError(e, context: 'Dashboard refresh button');
+              ErrorHandler.showErrorSnackbar(
+                'Error',
+                'Failed to refresh dashboard',
+              );
+            }
           },
           tooltip: 'Refresh Dashboard',
         ),
