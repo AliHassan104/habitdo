@@ -1286,16 +1286,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       // Floating Action Button with error handling
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          try {
-            context.goNamed(AppRoutes.addEdit);
-          } catch (error) {
-            _handleError(error, context: 'Navigate to add habit');
-          }
-        },
-        child: const Icon(Icons.add),
-      ),
+      // floatingActionButton: FloatingActionButton(
+      //   onPressed: () {
+      //     try {
+      //       context.goNamed(AppRoutes.addEdit);
+      //     } catch (error) {
+      //       _handleError(error, context: 'Navigate to add habit');
+      //     }
+      //   },
+      //   child: const Icon(Icons.add),
+      // ),
     );
   }
 
