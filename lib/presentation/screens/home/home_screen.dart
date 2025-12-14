@@ -443,6 +443,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return Card(
         margin: const EdgeInsets.symmetric(vertical: 6),
         elevation: 2,
+        clipBehavior: Clip.hardEdge,
         child: InkWell(
           onTap: () {
             try {
@@ -594,8 +595,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                         newValue >= target) {
                                       updateData['isCompleted'] = true;
                                     }
+                                    final user =
+                                        FirebaseAuth.instance.currentUser;
+                                    if (user == null) {
+                                      // Handle unauthenticated state (optional)
+                                      return;
+                                    }
 
                                     await FirebaseFirestore.instance
+                                        .collection('users')
+                                        .doc(user.uid)
                                         .collection('habits')
                                         .doc(habit.id)
                                         .update(updateData);
@@ -670,8 +679,17 @@ class _HomeScreenState extends State<HomeScreen> {
                             TextButton(
                               onPressed: () async {
                                 try {
+                                  final user =
+                                      FirebaseAuth.instance.currentUser;
+                                  if (user == null) {
+                                    // Handle unauthenticated state (optional)
+                                    return;
+                                  }
+
                                   // Allow unmarking completion
                                   await FirebaseFirestore.instance
+                                      .collection('users')
+                                      .doc(user.uid)
                                       .collection('habits')
                                       .doc(habit.id)
                                       .update({'isCompleted': false});
@@ -1082,9 +1100,11 @@ class _HomeScreenState extends State<HomeScreen> {
               child: StreamBuilder<QuerySnapshot>(
                 stream:
                     FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(currentUser!.uid)
                         .collection('habits')
-                        .where('uid', isEqualTo: currentUser?.uid)
                         .snapshots(),
+
                 builder: (context, snapshot) {
                   // Handle loading state
                   if (snapshot.connectionState == ConnectionState.waiting &&

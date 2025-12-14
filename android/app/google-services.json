@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "792305100362",
-    "project_id": "habitdo-98593",
-    "storage_bucket": "habitdo-98593.firebasestorage.app"
+    "project_number": "954159308261",
+    "project_id": "habitdo-c73e5",
+    "storage_bucket": "habitdo-c73e5.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:792305100362:android:94cca130367e3806b068b3",
+        "mobilesdk_app_id": "1:954159308261:android:7d5aa6ca522cdbf6c1630c",
         "android_client_info": {
           "package_name": "com.example.habitdo"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCkZY4GxmmoXYefrL7NmjRbr_v_AVdhrKQ"
+          "current_key": "AIzaSyD9MCiuI1uMWl1O_cOkLB91dCZhgWAwC-E"
         }
       ],
       "services": {

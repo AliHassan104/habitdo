@@ -39,6 +39,7 @@ class _AddEditScreenState extends State<AddEditScreen> {
   bool _isSaving = false;
 
   final User? currentUser = FirebaseAuth.instance.currentUser;
+
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _categoryController = TextEditingController();
@@ -82,7 +83,23 @@ class _AddEditScreenState extends State<AddEditScreen> {
 
   @override
   void initState() {
+    if (currentUser == null) {
+      ErrorHandler.showErrorSnackbar(
+        'Authentication Error',
+        'Please sign in to continue',
+      );
+      context.go('/signin');
+      return;
+    }
     super.initState();
+
+    // Initialize with passed data if available
+    if (widget.existingTitle != null) {
+      _titleController.text = widget.existingTitle!;
+    }
+    if (widget.existingDescription != null) {
+      _descriptionController.text = widget.existingDescription!;
+    }
 
     if (widget.habitId != null) {
       _loadExistingHabit();
@@ -92,8 +109,16 @@ class _AddEditScreenState extends State<AddEditScreen> {
   /// Load existing habit data with error handling
   Future<void> _loadExistingHabit() async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        // Handle unauthenticated state (optional)
+        return;
+      }
+
       final doc =
           await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser!.uid)
               .collection('habits')
               .doc(widget.habitId)
               .get();
@@ -212,22 +237,31 @@ class _AddEditScreenState extends State<AddEditScreen> {
         return;
       }
 
-      final targetValidation = Validation.validateRequired(
-        targetValue,
-        'Target value',
-      );
-      if (targetValidation != null) {
-        ErrorHandler.showErrorSnackbar('Validation Error', targetValidation);
-        return;
-      }
+      double? parsedTargetValue;
 
-      final parsedTargetValue = double.tryParse(targetValue);
-      if (parsedTargetValue == null || parsedTargetValue <= 0) {
-        ErrorHandler.showErrorSnackbar(
-          'Validation Error',
-          'Target value must be a positive number',
+      // ✅ Only validate and parse target for Weekly & Weekly Flexible
+      if (_repeatType == 'Weekly' || _repeatType == 'Weekly Flexible') {
+        final targetValidation = Validation.validateRequired(
+          targetValue,
+          'Target value',
         );
-        return;
+        if (targetValidation != null) {
+          ErrorHandler.showErrorSnackbar('Validation Error', targetValidation);
+          return;
+        }
+
+        parsedTargetValue = double.tryParse(targetValue);
+        if (parsedTargetValue == null || parsedTargetValue <= 0) {
+          ErrorHandler.showErrorSnackbar(
+            'Validation Error',
+            'Target value must be a positive number',
+          );
+          return;
+        }
+      } else {
+        // ✅ For Repeat Till Done, use a default target of 1 if left empty
+        parsedTargetValue =
+            targetValue.isEmpty ? 1.0 : (double.tryParse(targetValue) ?? 1.0);
       }
 
       // Validate repeat type specific requirements
@@ -339,8 +373,19 @@ class _AddEditScreenState extends State<AddEditScreen> {
 
       // Perform Firestore operation
       if (widget.habitId == null) {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) {
+          // Handle unauthenticated state (optional)
+          return;
+        }
+
         habitData['createdAt'] = Timestamp.now();
-        await FirebaseFirestore.instance.collection('habits').add(habitData);
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser!.uid)
+            .collection('habits')
+            .add(habitData);
+
         ErrorHandler.showSuccessSnackbar(
           'Success',
           'Habit created successfully',
@@ -350,11 +395,20 @@ class _AddEditScreenState extends State<AddEditScreen> {
           context: 'CreateHabit',
         );
       } else {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) {
+          // Handle unauthenticated state (optional)
+          return;
+        }
+
         habitData['updatedAt'] = Timestamp.now();
         await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser!.uid)
             .collection('habits')
             .doc(widget.habitId)
             .update(habitData);
+
         ErrorHandler.showSuccessSnackbar(
           'Success',
           'Habit updated successfully',
@@ -995,7 +1049,15 @@ class _AddEditScreenState extends State<AddEditScreen> {
                     );
 
                     try {
+                      final user = FirebaseAuth.instance.currentUser;
+                      if (user == null) {
+                        // Handle unauthenticated state (optional)
+                        return;
+                      }
+
                       await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(currentUser!.uid)
                           .collection('habits')
                           .doc(widget.habitId)
                           .delete();
@@ -1026,7 +1088,15 @@ class _AddEditScreenState extends State<AddEditScreen> {
                                 context,
                                 message: 'Retrying delete...',
                               );
+                              final user = FirebaseAuth.instance.currentUser;
+                              if (user == null) {
+                                // Handle unauthenticated state (optional)
+                                return;
+                              }
+
                               await FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(user.uid)
                                   .collection('habits')
                                   .doc(widget.habitId)
                                   .delete();

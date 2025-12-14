@@ -139,31 +139,57 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   void _handleLogin() async {
-    var email = emailController.text.trim();
-    var password = passwordController.text.trim();
+    final email = emailController.text.trim();
+    final password = passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      Get.snackbar('Error', 'Please fill all fields');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
       return;
     }
 
     try {
-      final User? fireBaseUser =
-          (await FirebaseAuth.instance.signInWithEmailAndPassword(
-            email: email,
-            password: password,
-          )).user;
+      // Attempt to sign in
+      final userCredential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: email, password: password);
+
+      final fireBaseUser = userCredential.user;
 
       if (fireBaseUser == null) {
-        Get.snackbar('Error', 'Login failed');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Login failed — please try again.')),
+        );
         return;
-      } else {
-        print('User logged in: ${fireBaseUser.email}');
-        context.go('/home');
-        Get.snackbar('Success', 'Login successful');
       }
+
+      // Success
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Welcome back, ${fireBaseUser.email}!')),
+      );
+
+      // Navigate after short delay (so snackbar can show)
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) context.go('/home');
+      });
+    } on FirebaseAuthException catch (e) {
+      String message = 'Login failed. Please try again.';
+
+      if (e.code == 'user-not-found') {
+        message = 'No user found for that email.';
+      } else if (e.code == 'wrong-password') {
+        message = 'Incorrect password.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Invalid email address.';
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
-      Get.snackbar('Error', 'Login failed: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Unexpected error: $e')));
     }
   }
 }

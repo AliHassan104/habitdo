@@ -151,7 +151,12 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Widget _buildLogoutButton(BuildContext context) {
-    return ElevatedButton(
+    return ElevatedButton.icon(
+      icon: const Icon(Icons.logout),
+      label: const Text(
+        'Logout',
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      ),
       style: ElevatedButton.styleFrom(
         foregroundColor: Colors.white,
         backgroundColor: Colors.redAccent,
@@ -159,13 +164,45 @@ class SettingsScreen extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12),
       ),
       onPressed: () async {
-        await FirebaseAuth.instance.signOut();
-        context.go('/signin');
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                title: const Text('Logout Confirmation'),
+                content: const Text('Are you sure you want to sign out?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Logout'),
+                  ),
+                ],
+              ),
+        );
+
+        if (confirm == true) {
+          try {
+            await FirebaseAuth.instance.signOut();
+            if (context.mounted) context.go('/signin');
+          } catch (e) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to log out. Please try again.'),
+              ),
+            );
+          }
+        }
       },
-      child: const Text(
-        'Logout',
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-      ),
     );
   }
 }

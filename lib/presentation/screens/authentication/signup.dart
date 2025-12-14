@@ -78,19 +78,29 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     phone.isEmpty ||
                     email.isEmpty ||
                     password.isEmpty) {
-                  Get.snackbar('Error', 'Please fill all fields');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please fill all fields')),
+                  );
                   return;
                 }
 
                 if (!email.contains('@')) {
-                  Get.snackbar('Error', 'Enter a valid email');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Enter a valid email address'),
+                    ),
+                  );
                   return;
                 }
 
                 if (phone.length < 10) {
-                  Get.snackbar('Error', 'Enter a valid phone number');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Enter a valid phone number')),
+                  );
                   return;
                 }
+
+                setState(() => _isLoading = true);
 
                 try {
                   // Step 1: Create user
@@ -103,7 +113,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   final currentUser = userCredential.user;
 
                   if (currentUser != null) {
-                    // Step 2: Store in Firestore
+                    // Step 2: Store user in Firestore
                     await FirebaseFirestore.instance
                         .collection('users')
                         .doc(currentUser.uid)
@@ -115,25 +125,42 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           'uid': currentUser.uid,
                         });
 
-                    // Step 3: Sign out and navigate
+                    // Step 3: Sign out the new user
                     await FirebaseAuth.instance.signOut();
 
-                    Get.snackbar('Success', 'Account created successfully');
+                    // Step 4: Feedback message
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Account created successfully! Please sign in.',
+                        ),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
 
+                    // Step 5: Clear fields
                     nameController.clear();
                     phoneController.clear();
                     emailController.clear();
                     passwordController.clear();
 
-                    context.go('/signin'); // ✅ this is correct for GoRouter
-                  } else {
-                    Get.snackbar('Error', 'User creation failed');
+                    // Step 6: Navigate after short delay
+                    Future.delayed(const Duration(seconds: 2), () {
+                      if (mounted) context.go('/signin');
+                    });
                   }
                 } on FirebaseAuthException catch (e) {
-                  Get.snackbar('Auth Error', e.message ?? 'Unknown error');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(e.message ?? 'Authentication failed'),
+                    ),
+                  );
                 } catch (e) {
-                  Get.snackbar('Error', 'Something went wrong: $e');
-                  setState(() => _isLoading = false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Something went wrong: $e')),
+                  );
+                } finally {
+                  if (mounted) setState(() => _isLoading = false);
                 }
               },
 

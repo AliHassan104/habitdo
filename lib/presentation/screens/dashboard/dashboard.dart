@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:habitdo/presentation/shared/widgets/bottom_navigation.dart';
+import 'package:habitdo/presentation/app/app_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -416,9 +417,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final start = range["start"]!;
       final end = range["end"]!;
 
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        ErrorHandler.showErrorSnackbar(
+          'Authentication Error',
+          'Please sign in to view dashboard',
+        );
+        return [];
+      }
+
+      // ✅ FIXED Firestore query: points to users/{uid}/habits
       final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
           .collection('habits')
-          .where('uid', isEqualTo: currentUser?.uid)
           .get()
           .timeout(
             const Duration(seconds: 30),
@@ -529,6 +541,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               habitSummaries.add({
                 'id': doc.id,
                 'title': data['title'],
+                'description': data['description'],
                 'repeatType': repeatType,
                 'completedDays': completedDays,
                 'totalDays': totalDays,
@@ -1246,8 +1259,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           borderRadius: BorderRadius.circular(16),
           onTap:
               () => context.goNamed(
-                'habit-detail',
-                pathParameters: {'id': habit['id']},
+                AppRoutes.addEdit,
+                extra: {
+                  'habitId': habit['id'],
+                  'existingTitle': habit['title'],
+                  'existingDescription': habit['description'],
+                },
               ),
           child: Container(
             padding: const EdgeInsets.all(16.0),
